@@ -1,0 +1,39 @@
+[package]
+name = "chrono-snap"
+version = "0.2.3"
+description = "An app to record screens and events"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "chrono_snap_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-store = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+xcap = "0.9.3"
+image = "0.25.10"
+chrono = "0.4.44"
+tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros", "time"] }
+anyhow = "1.0.102"
+base64 = "0.22.1"
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+tauri-plugin-notification = "2.3.3"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+

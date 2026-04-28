@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#007AFF" />
+      <stop offset="100%" stop-color="#0056B3" />
+    </linearGradient>
+    
+    <!-- Shutter Gradient -->
+    <linearGradient id="shutterGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1" />
+      <stop offset="100%" stop-color="#F2F2F7" stop-opacity="0.8" />
+    </linearGradient>
+
+    <!-- Drop Shadow for depth -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.25" />
+    </filter>
+    
+    <!-- Inner Shadow for the lens -->
+    <filter id="innerShadow">
+      <feOffset dx="0" dy="4"/>
+      <feGaussianBlur stdDeviation="6" result="offset-blur"/>
+      <feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse"/>
+      <feFlood flood-color="black" flood-opacity="0.15" result="color"/>
+      <feComposite operator="in" in="color" in2="inverse" result="shadow"/>
+      <feComposite operator="over" in="shadow" in2="SourceGraphic"/>
+    </filter>
+  </defs>
+
+  <!-- App Icon Base (Squircle) -->
+  <rect x="32" y="32" width="448" height="448" rx="100" ry="100" fill="url(#bgGradient)" filter="url(#dropShadow)" />
+
+  <!-- Outer Camera/Clock Ring -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#FFFFFF" stroke-width="24" stroke-opacity="0.3" />
+
+  <!-- Time Track / Timeline segments (representing intervals) -->
+  <path d="M 256 96 A 160 160 0 0 1 416 256" fill="none" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round" />
+  
+  <!-- Central Shutter/Lens Background -->
+  <circle cx="256" cy="256" r="112" fill="url(#shutterGradient)" filter="url(#innerShadow)" />
+
+  <!-- Inner Dark Lens -->
+  <circle cx="256" cy="256" r="64" fill="#1D1D1F" />
+
+  <!-- Camera Flash / Sparkle -->
+  <circle cx="340" cy="172" r="16" fill="#FFFFFF" />
+
+  <!-- Clock Hands (Time element) inside the lens -->
+  <!-- Minute Hand -->
+  <line x1="256" y1="256" x2="256" y2="200" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" />
+  <!-- Hour Hand -->
+  <line x1="256" y1="256" x2="296" y2="256" stroke="#007AFF" stroke-width="8" stroke-linecap="round" />
+  
+  <!-- Center Pin -->
+  <circle cx="256" cy="256" r="12" fill="#FFFFFF" />
+  
+</svg>

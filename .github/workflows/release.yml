@@ -1,0 +1,74 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      id-token: write
+      contents: write
+      attestations: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
+        with:
+          toolchain: stable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri app
+        run: pnpm tauri build
+
+      - name: Package Windows executable
+        shell: pwsh
+        run: |
+          $exePath = "src-tauri/target/release/ChronoSnap.exe"
+          $archiveDir = "src-tauri/target/release/artifacts"
+          $archiveName = "ChronoSnap-${{ github.ref_name }}-windows-x64.7z"
+          $archivePath = Join-Path $archiveDir $archiveName
+
+          New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
+
+          # Run 7z from the exe directory so the archive only contains ChronoSnap.exe.
+          Push-Location (Split-Path $exePath)
+          try {
+            7z a -t7z (Join-Path (Resolve-Path ..\release\artifacts) $archiveName) (Split-Path $exePath -Leaf)
+          }
+          finally {
+            Pop-Location
+          }
+    
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            src-tauri/target/release/artifacts/*.7z
+            src-tauri/target/release/bundle/**/*.msi
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: |
+            src-tauri/target/release/artifacts/*.7z
+            src-tauri/target/release/bundle/**/*.msi
