@@ -5,12 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { 
-  RefreshCw, Calendar, ChevronLeft, ChevronRight, Play, Pause, SquarePlus, Tag as TagIcon, Download, Settings, Maximize2, X, Image as ImageIcon, BarChart2, Trash2, Bell, AlertTriangle
+  RefreshCw, Calendar, ChevronLeft, ChevronRight, Play, Pause, SquarePlus, Tag as TagIcon, Download, Settings, X, Image as ImageIcon, BarChart2, Trash2, Bell, AlertTriangle
 } from "lucide-vue-next";
 
 import { 
   isSetupComplete, savePath, dbPath, isPaused, currentDate, currentLogicalMinute, getLogicDateStr, timelineImages, selectedImage, lockedImage, 
-  previewSrc, isFullscreen, dayEvents, reminders, toast, showToast, timelineZoom, theme, viewMode,
+  previewSrc, dayEvents, reminders, toast, showToast, timelineZoom, theme, viewMode,
   retainDays, captureInterval,
   TIME_OFFSET_MINUTES, TOTAL_MINUTES, getTagColor, getTagName, mainTags, getSubTags,
   logicalMinutesToTime, logicalMinutesFromTime, formatDuration,
@@ -535,7 +535,6 @@ const togglePause = async () => {
             <span v-if="viewMode === 'preview' && selectedImage" class="text-xs font-bold px-2 py-0.5 rounded-md" :class="lockedImage?.path === selectedImage.path ? 'bg-[#007AFF] text-white' : 'bg-bg-input text-text-sec'">{{ lockedImage?.path === selectedImage.path ? '已定格' : '预览中' }}</span>
           </div>
           <div class="flex items-center gap-4">
-            <button v-if="viewMode === 'preview' && selectedImage" @click="isFullscreen = true" class="p-2.5 text-text-sec hover:text-text-main"><Maximize2 :size="20" /></button>
             <div class="flex bg-bg-input rounded-xl p-1 gap-1 border border-border-main/50 shadow-inner">
                <button @click="viewMode = 'preview'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'preview' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><ImageIcon :size="14"/> 预览</button>
                <button @click="viewMode = 'dashboard'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'dashboard' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><BarChart2 :size="14"/> 统计</button>
@@ -641,8 +640,7 @@ const togglePause = async () => {
       </div>
     </div>
 
-    <!-- Fullscreen & Tooltip & Toast -->
-    <div v-if="isFullscreen && previewSrc" class="fixed inset-0 z-200 bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl"><button @click="isFullscreen = false" class="absolute top-10 right-10 w-12 h-12 bg-white/10 rounded-full flex items-center justify-center"><X :size="32" class="text-white" /></button><img :src="previewSrc" class="max-w-full max-h-full object-contain shadow-2xl" /></div>
+    <!-- Tooltip & Toast -->
     <div v-if="hoveredEventDetails && hoveredEventDetails.event" class="fixed z-300 pointer-events-none bg-bg-card/90 backdrop-blur-xl border border-white/20 shadow-2xl rounded-2xl p-4 w-64" :style="{ left: hoveredEventDetails.x + 15 + 'px', top: hoveredEventDetails.y + 15 + 'px' }">
       <div class="flex items-center gap-2 mb-2">
         <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: getTagColor(hoveredEventDetails.event.main_tag_id) }"></div>

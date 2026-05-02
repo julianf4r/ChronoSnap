@@ -83,7 +83,7 @@ watch(previewSrc, resetView);
     <img
       v-if="previewSrc"
       :src="previewSrc"
-      class="max-w-full max-h-full object-contain rounded-3xl shadow-2xl border border-border-main/50 transition-transform duration-75"
+      class="max-w-full max-h-full object-contain shadow-2xl border border-border-main/50 transition-transform duration-75"
       :style="imageStyle"
       draggable="false"
       @mousedown.prevent="startDrag"
