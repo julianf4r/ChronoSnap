@@ -315,6 +315,19 @@ const findClosestImage = (minute: number) => {
   return Math.abs((prev.logical_minute ?? 0) - minute) <= Math.abs((next.logical_minute ?? 0) - minute) ? prev : next;
 };
 
+const findOverlappingEvent = (event: DBEvent) => {
+  return dayEvents.value.find(ev =>
+    ev.id !== event.id &&
+    ev.date === event.date &&
+    ev.start_minute < event.end_minute &&
+    ev.end_minute > event.start_minute
+  );
+};
+
+const formatEventRange = (event: DBEvent) => {
+  return `${logicalMinutesToTime(event.start_minute)} - ${logicalMinutesToTime(event.end_minute)}`;
+};
+
 // Request Animation Frame lock for mouse move
 let isMouseMovePending = false;
 const handleTimelineMouseMove = (e: MouseEvent) => {
@@ -361,7 +374,13 @@ const handleTimelineMouseUp = () => {
     const start = Math.min(dragStartMin.value!, dragEndMin.value!);
     const end = Math.max(dragStartMin.value!, dragEndMin.value!);
     if (end - start >= 1) {
-      editingEvent.value = { id: 0, date: currentDate.value, start_minute: start, end_minute: end, main_tag_id: mainTags.value[0]?.id || 0, sub_tag_id: null, content: "" };
+      const newEvent = { id: 0, date: currentDate.value, start_minute: start, end_minute: end, main_tag_id: mainTags.value[0]?.id || 0, sub_tag_id: null, content: "" };
+      const overlap = findOverlappingEvent(newEvent);
+      if (overlap) {
+        showToast(`时间段与已有事件 ${formatEventRange(overlap)} 重叠`, "error");
+        return;
+      }
+      editingEvent.value = newEvent;
       isEventModalOpen.value = true;
     } else if (timelineImages.value.length) {
         const closest = findClosestImage(start);
@@ -419,6 +438,11 @@ const calendarDays = computed(() => {
 const saveEvent = async () => {
   if (editingEvent.value.end_minute <= editingEvent.value.start_minute) {
     showToast("结束时间必须晚于开始时间", "error");
+    return;
+  }
+  const overlap = findOverlappingEvent(editingEvent.value);
+  if (overlap) {
+    showToast(`时间段与已有事件 ${formatEventRange(overlap)} 重叠`, "error");
     return;
   }
   try {

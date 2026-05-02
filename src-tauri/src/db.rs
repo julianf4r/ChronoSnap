@@ -183,6 +183,20 @@ pub fn get_events_range(path: &str, start_date: &str, end_date: &str) -> anyhow:
 
 pub fn save_event(path: &str, event: Event) -> anyhow::Result<i64> {
     let conn = open_connection(path)?;
+    let overlap_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM events
+         WHERE date = ?1
+           AND id != ?2
+           AND start_minute < ?4
+           AND end_minute > ?3",
+        params![event.date, event.id, event.start_minute, event.end_minute],
+        |row| row.get(0),
+    )?;
+
+    if overlap_count > 0 {
+        anyhow::bail!("该时间段与已有事件重叠");
+    }
+
     if event.id > 0 {
         conn.execute(
             "UPDATE events SET date=?1, start_minute=?2, end_minute=?3, main_tag_id=?4, sub_tag_id=?5, content=?6 WHERE id=?7",
