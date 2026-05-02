@@ -581,7 +581,7 @@ const togglePause = async () => {
 
     <!-- Storage Health Warning -->
     <div v-if="isStorageBlocked && !isSettingsOpen" class="fixed inset-0 z-190 bg-black/45 backdrop-blur-sm flex items-center justify-center p-6">
-      <div class="bg-bg-card rounded-[32px] shadow-2xl w-full max-w-xl border border-border-main overflow-hidden">
+      <div class="bg-bg-card rounded-4xl shadow-2xl w-full max-w-xl border border-border-main overflow-hidden">
         <div class="p-8 border-b border-border-main/60 flex items-start gap-4">
           <div class="w-11 h-11 rounded-2xl bg-[#FF9500]/15 text-[#FF9500] flex items-center justify-center shrink-0">
             <AlertTriangle :size="24" />

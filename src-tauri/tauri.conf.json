@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ChronoSnap",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "mainBinaryName": "ChronoSnap",
   "identifier": "top.volan.chrono-snap",
   "build": {
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "瞬影 - 时间记录 v0.2.3",
+        "title": "瞬影 - 时间记录 v0.2.4",
         "width": 1760,
         "height": 1100
       }
@@ -34,7 +34,7 @@
         "language": "zh-CN"
       }
     },
-    "publisher": "Julian Freeman",
+    "publisher": "Julian F.",
     "copyright": "Licensed under the MIT License.",
     "shortDescription": "用于自动截图回溯、事件标注和时间统计的本地时间记录工具。",
     "longDescription": "ChronoSnap（瞬影）是一款本地优先的时间记录工具。它会按设定间隔自动捕获屏幕快照，并将截图按日期保存到本地目录，方便在时间轴中回看一天的工作和生活片段。你可以为时间段添加标签、备注和提醒，查看分类统计，并将记录导出为 JSON 或可粘贴到表格软件中的数据。应用数据由本地截图目录和 SQLite 数据库保存，适合需要复盘时间分配、整理活动记录或保留工作过程线索的个人使用场景。",

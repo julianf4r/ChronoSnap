@@ -22,22 +22,3 @@ ChronoSnap 默认只使用本地数据：
 - 配置项保存在 Tauri 的本地应用配置中
 
 请根据截图内容的敏感程度选择合适的保存位置，并定期清理或备份数据。
-
-## 开发
-
-```bash
-pnpm install
-pnpm tauri dev
-```
-
-构建前端：
-
-```bash
-pnpm build
-```
-
-构建桌面安装包：
-
-```bash
-pnpm tauri build
-```
