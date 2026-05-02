@@ -71,7 +71,9 @@ watch(viewMode, (mode) => {
 
 export const dashboardStats = computed(() => {
   let totalMinutes = 0;
+  let missingSubTagTotalMinutes = 0;
   const mainTagMap = new Map<number, { total: number, subTags: Map<number, number> }>();
+  const missingSubTagMap = new Map<number, { total: number, events: DBEvent[] }>();
   const uniqueDays = new Set<string>();
 
   dashboardEvents.value.forEach(ev => {
@@ -88,6 +90,14 @@ export const dashboardStats = computed(() => {
     if (ev.sub_tag_id) {
       const subTotal = mainStat.subTags.get(ev.sub_tag_id) || 0;
       mainStat.subTags.set(ev.sub_tag_id, subTotal + diff);
+    } else {
+      missingSubTagTotalMinutes += diff;
+      if (!missingSubTagMap.has(ev.main_tag_id)) {
+        missingSubTagMap.set(ev.main_tag_id, { total: 0, events: [] });
+      }
+      const missingStat = missingSubTagMap.get(ev.main_tag_id)!;
+      missingStat.total += diff;
+      missingStat.events.push(ev);
     }
   });
 
@@ -113,5 +123,22 @@ export const dashboardStats = computed(() => {
     };
   }).sort((a, b) => b.total - a.total);
 
-  return { totalMinutes, dailyAverage: totalMinutes / daysCount, mainTags: mainTagsList, naturalDays, recordedDays, daysCount };
+  const missingSubTags = Array.from(missingSubTagMap.entries()).map(([id, stat]) => ({
+    id,
+    total: stat.total,
+    percentage: totalMinutes > 0 ? (stat.total / totalMinutes) * 100 : 0,
+    events: stat.events.sort((a, b) => a.date.localeCompare(b.date) || a.start_minute - b.start_minute)
+  })).sort((a, b) => b.total - a.total);
+
+  return {
+    totalMinutes,
+    dailyAverage: totalMinutes / daysCount,
+    mainTags: mainTagsList,
+    naturalDays,
+    recordedDays,
+    daysCount,
+    missingSubTagTotalMinutes,
+    missingSubTagCount: missingSubTags.reduce((sum, tag) => sum + tag.events.length, 0),
+    missingSubTags
+  };
 });

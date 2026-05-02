@@ -8,6 +8,7 @@ import {
   formatMinutes, getTagColor, getTagName 
 } from "../../store/dashboardStore";
 import { toISODate } from "../../store";
+import { logicalMinutesToTime } from "../../store";
 
 const startCalendarRef = ref<HTMLElement | null>(null);
 const endCalendarRef = ref<HTMLElement | null>(null);
@@ -139,6 +140,43 @@ const endCalendarDays = computed(() => getCalendarDays(endCalendarMonth.value));
 
       <!-- Detailed List -->
       <div class="space-y-4">
+         <div class="mb-10 bg-bg-card border border-border-main rounded-3xl p-6 shadow-sm">
+            <div class="flex items-start justify-between gap-6 mb-5">
+              <div>
+                <h3 class="text-sm font-bold text-text-sec mb-2 uppercase tracking-wider">未标副标签检测</h3>
+                <div class="text-2xl font-black text-text-main">{{ formatMinutes(dashboardStats.missingSubTagTotalMinutes) }}</div>
+              </div>
+              <div class="text-right">
+                <div class="text-xs font-bold text-text-sec mb-2">时间段数量</div>
+                <div class="text-2xl font-black" :class="dashboardStats.missingSubTagCount > 0 ? 'text-[#FF9500]' : 'text-[#34C759]'">{{ dashboardStats.missingSubTagCount }}</div>
+              </div>
+            </div>
+
+            <div v-if="dashboardStats.missingSubTags.length > 0" class="space-y-4">
+              <div v-for="tag in dashboardStats.missingSubTags" :key="tag.id" class="border-t border-border-main/50 pt-4">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: getTagColor(tag.id) }"></div>
+                    <span class="text-sm font-bold">{{ getTagName(tag.id) }}</span>
+                  </div>
+                  <div class="text-xs font-bold text-text-sec">
+                    {{ formatMinutes(tag.total) }} · {{ tag.percentage.toFixed(1) }}%
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div v-for="ev in tag.events" :key="ev.id" class="bg-bg-input/60 rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-3">
+                    <span class="font-bold text-text-main whitespace-nowrap">{{ ev.date }}</span>
+                    <span class="text-text-sec font-bold whitespace-nowrap">{{ logicalMinutesToTime(ev.start_minute) }} - {{ logicalMinutesToTime(ev.end_minute) }}</span>
+                    <span class="text-text-sec truncate flex-1 text-right">{{ ev.content || '无备注' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="border-t border-border-main/50 pt-5 text-sm font-bold text-text-sec">
+              当前范围内所有事件都已标记副标签
+            </div>
+         </div>
+
          <h3 class="text-sm font-bold text-text-sec mb-4 uppercase tracking-wider">时间分布明细</h3>
          <div v-for="tag in dashboardStats.mainTags" :key="tag.id" class="bg-bg-card border border-border-main rounded-3xl p-5 shadow-sm transition-all hover:border-border-main/80 hover:shadow-md">
             <div class="flex justify-between items-center mb-1">
