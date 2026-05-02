@@ -23,6 +23,7 @@ pub fn run() {
             engine::get_pause_state,
             engine::get_timeline,
             engine::get_image_base64,
+            engine::check_storage_health,
             engine::update_interval,
             engine::update_db_path,
             engine::get_tags,
@@ -43,7 +44,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(engine::AppState {
                 is_paused: Arc::new(AtomicBool::new(false)),
-                capture_interval_secs: std::sync::atomic::AtomicU64::new(30),
+                capture_interval_secs: std::sync::atomic::AtomicU64::new(60),
                 db_path: std::sync::Mutex::new(None),
                 toggle_menu_item: std::sync::Mutex::new(None),
             });

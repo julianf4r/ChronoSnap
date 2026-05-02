@@ -35,3 +35,14 @@ export interface Toast {
   type: "success" | "error";
   visible: boolean;
 }
+
+export interface StorageHealth {
+  ok: boolean;
+  save_path_exists: boolean;
+  save_path_writable: boolean;
+  db_parent_exists: boolean;
+  db_parent_writable: boolean;
+  db_file_exists: boolean;
+  db_file_writable: boolean;
+  issues: string[];
+}

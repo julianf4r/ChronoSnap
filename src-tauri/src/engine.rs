@@ -4,15 +4,88 @@ use tokio::time::{interval, Duration};
 use tauri::{AppHandle, Manager, Emitter};
 use xcap::Monitor;
 use chrono::Local;
-use std::fs;
-use std::path::PathBuf;
+use std::fs::{self, OpenOptions};
+use std::path::{Path, PathBuf};
 use tauri_plugin_store::StoreExt;
+use serde::Serialize;
 
 pub struct AppState {
     pub is_paused: Arc<AtomicBool>,
     pub capture_interval_secs: std::sync::atomic::AtomicU64,
     pub db_path: std::sync::Mutex<Option<String>>,
     pub toggle_menu_item: std::sync::Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
+}
+
+#[derive(Serialize)]
+pub struct StorageHealth {
+    pub ok: bool,
+    pub save_path_exists: bool,
+    pub save_path_writable: bool,
+    pub db_parent_exists: bool,
+    pub db_parent_writable: bool,
+    pub db_file_exists: bool,
+    pub db_file_writable: bool,
+    pub issues: Vec<String>,
+}
+
+fn can_write_temp_file(dir: &Path) -> bool {
+    let file_name = format!(
+        ".chrono-snap-write-test-{}-{}",
+        std::process::id(),
+        chrono::Local::now().timestamp_nanos_opt().unwrap_or_default()
+    );
+    let test_path = dir.join(file_name);
+    match OpenOptions::new().write(true).create_new(true).open(&test_path) {
+        Ok(_) => {
+            let _ = fs::remove_file(test_path);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+#[tauri::command]
+pub fn check_storage_health(save_path: String, db_path: String) -> StorageHealth {
+    let save_dir = PathBuf::from(save_path);
+    let db_file = PathBuf::from(db_path);
+    let db_parent = db_file.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from(""));
+
+    let save_path_exists = save_dir.is_dir();
+    let save_path_writable = save_path_exists && can_write_temp_file(&save_dir);
+    let db_parent_exists = db_parent.is_dir();
+    let db_parent_writable = db_parent_exists && can_write_temp_file(&db_parent);
+    let db_file_exists = db_file.is_file();
+    let db_file_writable = if db_file_exists {
+        OpenOptions::new().read(true).write(true).open(&db_file).is_ok()
+    } else {
+        db_parent_writable
+    };
+
+    let mut issues = Vec::new();
+    if !save_path_exists {
+        issues.push("截图保存目录不存在，请重新选择一个可用目录".into());
+    } else if !save_path_writable {
+        issues.push("截图保存目录不可写，请检查目录权限或更换目录".into());
+    }
+
+    if !db_parent_exists {
+        issues.push("数据库文件所在目录不存在，请重新选择或创建数据库文件".into());
+    } else if !db_parent_writable {
+        issues.push("数据库文件所在目录不可写，请检查目录权限或更换位置".into());
+    } else if db_file_exists && !db_file_writable {
+        issues.push("数据库文件不可写，请检查文件权限或更换数据库文件".into());
+    }
+
+    StorageHealth {
+        ok: issues.is_empty(),
+        save_path_exists,
+        save_path_writable,
+        db_parent_exists,
+        db_parent_writable,
+        db_file_exists,
+        db_file_writable,
+        issues,
+    }
 }
 
 #[tauri::command]
@@ -349,8 +422,8 @@ async fn capture_screens(app: &AppHandle) -> anyhow::Result<()> {
     };
 
     let base_dir = PathBuf::from(save_path_str);
-    if !base_dir.exists() {
-        fs::create_dir_all(&base_dir)?;
+    if !base_dir.is_dir() {
+        return Ok(());
     }
 
     let merge_screens = true;

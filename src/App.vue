@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { 
-  RefreshCw, Calendar, ChevronLeft, ChevronRight, Play, Pause, SquarePlus, Tag as TagIcon, Download, Settings, Maximize2, X, Image as ImageIcon, BarChart2, Trash2, Bell 
+  RefreshCw, Calendar, ChevronLeft, ChevronRight, Play, Pause, SquarePlus, Tag as TagIcon, Download, Settings, Maximize2, X, Image as ImageIcon, BarChart2, Trash2, Bell, AlertTriangle
 } from "lucide-vue-next";
 
 import { 
@@ -17,7 +17,7 @@ import {
   loadTags, loadEvents, loadReminders, toISODate, refreshBadgeCount,
   calendarStatus, loadCalendarStatus, currentCalendarMonthStr
 } from "./store";
-import { DBEvent, TimelineItem } from "./types";
+import { DBEvent, TimelineItem, StorageHealth } from "./types";
 
 // --- Components ---
 import Setup from "./components/Setup.vue";
@@ -36,6 +36,9 @@ const isEventModalOpen = ref(false);
 const isCalendarOpen = ref(false);
 const isReminderManagerOpen = ref(false);
 const isMouseOverTimeline = ref(false); // Track mouse state to prevent race conditions
+const storageHealth = ref<StorageHealth | null>(null);
+const isStorageHealthChecking = ref(false);
+const isStorageBlocked = computed(() => isSetupComplete.value && storageHealth.value !== null && !storageHealth.value.ok);
 
 const calendarRef = ref<HTMLElement | null>(null);
 const calendarMonth = ref(new Date());
@@ -153,7 +156,6 @@ onMounted(async () => {
     savePath.value = path;
     dbPath.value = dPath;
     isSetupComplete.value = true;
-    await invoke("update_db_path", { path: dbPath.value });
     
     const rDays = await store.get<number>("retainDays");
     if (rDays) retainDays.value = rDays;
@@ -165,10 +167,7 @@ onMounted(async () => {
     if (tTheme) theme.value = tTheme;
 
     applyTheme(theme.value);
-    await invoke("update_interval", { seconds: captureInterval.value });
-    isPaused.value = await invoke<boolean>("get_pause_state");
-    
-    await loadTimeline(true); await loadTags(); await loadEvents(); await loadReminders();
+    await initializeConfiguredStorage(true);
   }
 
   await listen<boolean>("pause-state-changed", (event) => { isPaused.value = event.payload; });
@@ -185,11 +184,53 @@ onUnmounted(() => {
 
 const handleSetupComplete = async () => {
   applyTheme(theme.value);
+  await initializeConfiguredStorage(true);
+};
+
+const checkStorageHealth = async () => {
+  if (!savePath.value || !dbPath.value) return null;
+  isStorageHealthChecking.value = true;
+  try {
+    const health = await invoke<StorageHealth>("check_storage_health", { savePath: savePath.value, dbPath: dbPath.value });
+    storageHealth.value = health;
+    return health;
+  } finally {
+    isStorageHealthChecking.value = false;
+  }
+};
+
+const initializeConfiguredStorage = async (autoScroll = false) => {
+  const health = await checkStorageHealth();
+  if (!health?.ok) {
+    showToast("存储路径不可用，请检查设置", "error");
+    return false;
+  }
+
+  try {
+    await invoke("update_db_path", { path: dbPath.value });
+    await invoke("update_interval", { seconds: captureInterval.value });
+    isPaused.value = await invoke<boolean>("get_pause_state");
+  } catch (e) {
+    storageHealth.value = {
+      ok: false,
+      save_path_exists: true,
+      save_path_writable: true,
+      db_parent_exists: true,
+      db_parent_writable: true,
+      db_file_exists: true,
+      db_file_writable: false,
+      issues: ["数据库初始化失败: " + e]
+    };
+    showToast("数据库初始化失败", "error");
+    return false;
+  }
+
   updateCurrentMinute();
   await loadTags();
   await loadEvents();
   await loadReminders();
-  await loadTimeline(true);
+  await loadTimeline(autoScroll);
+  return true;
 };
 
 const handleClickOutside = (event: MouseEvent) => {
@@ -512,8 +553,44 @@ const togglePause = async () => {
     <!-- Modals -->
     <TagManager v-if="isTagManagerOpen" @close="isTagManagerOpen = false" />
     <ExportModal v-if="isExportModalOpen" @close="isExportModalOpen = false" />
-    <SettingsModal v-if="isSettingsOpen" @close="isSettingsOpen = false" />
+    <SettingsModal v-if="isSettingsOpen" @close="isSettingsOpen = false" @updated="initializeConfiguredStorage(true)" />
     <ReminderManager v-if="isReminderManagerOpen" @close="isReminderManagerOpen = false" />
+
+    <!-- Storage Health Warning -->
+    <div v-if="isStorageBlocked && !isSettingsOpen" class="fixed inset-0 z-190 bg-black/45 backdrop-blur-sm flex items-center justify-center p-6">
+      <div class="bg-bg-card rounded-[32px] shadow-2xl w-full max-w-xl border border-border-main overflow-hidden">
+        <div class="p-8 border-b border-border-main/60 flex items-start gap-4">
+          <div class="w-11 h-11 rounded-2xl bg-[#FF9500]/15 text-[#FF9500] flex items-center justify-center shrink-0">
+            <AlertTriangle :size="24" />
+          </div>
+          <div>
+            <h2 class="text-xl font-black mb-1">存储路径不可用</h2>
+            <p class="text-sm text-text-sec font-medium leading-relaxed">截图目录或数据库文件当前不可访问，已暂停加载本地记录。请修正路径后重新检测。</p>
+          </div>
+        </div>
+        <div class="p-8 space-y-5">
+          <div class="space-y-2">
+            <div class="text-[11px] font-bold text-text-sec uppercase tracking-wider">检测结果</div>
+            <div class="bg-bg-input rounded-2xl p-4 space-y-2">
+              <div v-for="issue in storageHealth?.issues" :key="issue" class="text-sm font-bold text-text-main flex gap-2">
+                <span class="text-[#FF9500]">!</span>
+                <span>{{ issue }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="space-y-2 text-xs font-bold text-text-sec">
+            <div class="truncate">截图目录：{{ savePath }}</div>
+            <div class="truncate">数据库文件：{{ dbPath }}</div>
+          </div>
+          <div class="flex gap-3 pt-2">
+            <button @click="isSettingsOpen = true" class="flex-1 bg-[#007AFF] text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-[#007AFF]/20">打开设置</button>
+            <button @click="initializeConfiguredStorage(true)" :disabled="isStorageHealthChecking" class="px-5 py-3.5 rounded-2xl font-bold bg-bg-input border border-border-main text-text-main disabled:opacity-50">
+              {{ isStorageHealthChecking ? '检测中...' : '重新检测' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
     
     <!-- Event Modal -->
     <div v-if="isEventModalOpen" class="fixed inset-0 z-110 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" @click.self="isEventModalOpen = false">

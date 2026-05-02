@@ -2,12 +2,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { X, FolderOpen, Plus } from "lucide-vue-next";
-import { savePath, dbPath, theme, captureInterval, retainDays } from "../../store";
+import { savePath, dbPath, theme, captureInterval, retainDays, showToast } from "../../store";
 import { load as loadStore } from "@tauri-apps/plugin-store";
+import { StorageHealth } from "../../types";
 
-defineEmits(['close']);
+const emit = defineEmits(['close', 'updated']);
 
 const updateSettings = async () => {
+  const health = await invoke<StorageHealth>("check_storage_health", { savePath: savePath.value, dbPath: dbPath.value });
+  if (!health.ok) {
+    showToast(health.issues[0] || "存储路径不可用", "error");
+    emit('updated');
+    return;
+  }
+
   const store = await loadStore("config.json");
   await store.set("savePath", savePath.value);
   await store.set("dbPath", dbPath.value);
@@ -17,6 +25,7 @@ const updateSettings = async () => {
   await store.save();
   await invoke("update_db_path", { path: dbPath.value });
   await invoke("update_interval", { seconds: captureInterval.value });
+  emit('updated');
   
   if (theme.value === 'dark') document.documentElement.classList.add('dark');
   else if (theme.value === 'light') document.documentElement.classList.remove('dark');

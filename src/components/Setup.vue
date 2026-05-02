@@ -2,8 +2,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Settings, FolderOpen, Plus } from "lucide-vue-next";
-import { savePath, dbPath, isSetupComplete, captureInterval, retainDays, theme } from "../store";
+import { savePath, dbPath, isSetupComplete, captureInterval, retainDays, theme, showToast } from "../store";
 import { load as loadStore } from "@tauri-apps/plugin-store";
+import { StorageHealth } from "../types";
 
 const emit = defineEmits(["complete"]);
 
@@ -13,6 +14,12 @@ const createDBFile = async () => { const s = await save({ filters: [{ name: "SQL
 
 const completeSetup = async () => {
   if (savePath.value && dbPath.value) {
+    const health = await invoke<StorageHealth>("check_storage_health", { savePath: savePath.value, dbPath: dbPath.value });
+    if (!health.ok) {
+      showToast(health.issues[0] || "存储路径不可用", "error");
+      return;
+    }
+
     await invoke("update_db_path", { path: dbPath.value });
     await invoke("update_interval", { seconds: captureInterval.value });
 
