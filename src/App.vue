@@ -116,6 +116,9 @@ const updateCurrentMinute = () => {
 let currentMinuteTimeout: number | null = null;
 let currentMinuteInterval: number | null = null;
 let captureUnlisten: any = null;
+let timelineZoomSaveTimeout: number | null = null;
+const previewCache = new Map<string, string>();
+const MAX_PREVIEW_CACHE_SIZE = 30;
 
 const startMinuteTimer = () => {
   updateCurrentMinute();
@@ -176,8 +179,18 @@ onUnmounted(() => {
   window.removeEventListener('mousedown', handleClickOutside);
   if (currentMinuteTimeout) window.clearTimeout(currentMinuteTimeout);
   if (currentMinuteInterval) window.clearInterval(currentMinuteInterval);
+  if (timelineZoomSaveTimeout) window.clearTimeout(timelineZoomSaveTimeout);
   if (captureUnlisten) captureUnlisten(); 
 });
+
+const handleSetupComplete = async () => {
+  applyTheme(theme.value);
+  updateCurrentMinute();
+  await loadTags();
+  await loadEvents();
+  await loadReminders();
+  await loadTimeline(true);
+};
 
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement;
@@ -213,8 +226,20 @@ const loadTimeline = async (autoScroll = false) => {
 const updatePreview = async (img: TimelineItem | null) => {
   if (!img || (selectedImage.value?.path === img.path && previewSrc.value)) return;
   selectedImage.value = img;
+  const cachedSrc = previewCache.get(img.path);
+  if (cachedSrc) {
+    previewSrc.value = cachedSrc;
+    return;
+  }
+
   const b64 = await invoke<string>("get_image_base64", { path: img.path });
-  previewSrc.value = `data:image/jpeg;base64,${b64}`;
+  const src = `data:image/jpeg;base64,${b64}`;
+  previewSrc.value = src;
+  previewCache.set(img.path, src);
+  if (previewCache.size > MAX_PREVIEW_CACHE_SIZE) {
+    const oldestKey = previewCache.keys().next().value;
+    if (oldestKey) previewCache.delete(oldestKey);
+  }
 };
 
 // --- Timeline Handlers ---
@@ -227,6 +252,26 @@ const handleTimelineMouseDown = (e: MouseEvent) => {
 const timeToLogicalMinutes = (timeStr: string, isNextDay = false) => {
   const [h, m, s = 0] = timeStr.split(":").map(Number);
   let t = h * 60 + m + (s / 60); if (isNextDay) t += 1440; return t - TIME_OFFSET_MINUTES;
+};
+
+const findClosestImage = (minute: number) => {
+  const images = timelineImages.value;
+  if (images.length === 0) return null;
+
+  let low = 0;
+  let high = images.length - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const midMinute = images[mid].logical_minute ?? 0;
+    if (midMinute < minute) low = mid + 1;
+    else high = mid - 1;
+  }
+
+  const next = images[low];
+  const prev = images[low - 1];
+  if (!prev) return next;
+  if (!next) return prev;
+  return Math.abs((prev.logical_minute ?? 0) - minute) <= Math.abs((next.logical_minute ?? 0) - minute) ? prev : next;
 };
 
 // Request Animation Frame lock for mouse move
@@ -254,20 +299,7 @@ const handleTimelineMouseMove = (e: MouseEvent) => {
       if (isDragging.value) dragEndMin.value = min;
       if (viewMode.value === 'dashboard') return;
       
-      if (timelineImages.value.length === 0) return;
-
-      let closest = timelineImages.value[0];
-      let minDiff = Math.abs(closest.logical_minute! - min);
-      
-      for (let i = 1; i < timelineImages.value.length; i++) {
-        const img = timelineImages.value[i];
-        const diff = Math.abs(img.logical_minute! - min);
-        if (diff < minDiff) {
-          minDiff = diff;
-          closest = img;
-        }
-      }
-      
+      const closest = findClosestImage(min);
       if (closest) updatePreview(closest);
     }
   });
@@ -291,17 +323,7 @@ const handleTimelineMouseUp = () => {
       editingEvent.value = { id: 0, date: currentDate.value, start_minute: start, end_minute: end, main_tag_id: mainTags.value[0]?.id || 0, sub_tag_id: null, content: "" };
       isEventModalOpen.value = true;
     } else if (timelineImages.value.length) {
-        // Optimized linear search on click
-        let closest = timelineImages.value[0];
-        let minDiff = Math.abs(closest.logical_minute! - start);
-        for (let i = 1; i < timelineImages.value.length; i++) {
-          const img = timelineImages.value[i];
-          const diff = Math.abs(img.logical_minute! - start);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closest = img;
-          }
-        }
+        const closest = findClosestImage(start);
         if (closest) { lockedImage.value = closest; viewMode.value = 'preview'; updatePreview(closest); }
     }
   }
@@ -315,7 +337,17 @@ const handleTimelineWheel = (e: WheelEvent) => {
     const oh = TOTAL_MINUTES * timelineZoom.value;
     timelineZoom.value = Math.min(Math.max(0.5, timelineZoom.value + (e.deltaY > 0 ? -0.2 : 0.2)), 15);
     timelineRef.value.scrollTop = (cy / oh) * (TOTAL_MINUTES * timelineZoom.value) - my;
+    persistTimelineZoom();
   }
+};
+
+const persistTimelineZoom = () => {
+  if (timelineZoomSaveTimeout) window.clearTimeout(timelineZoomSaveTimeout);
+  timelineZoomSaveTimeout = window.setTimeout(async () => {
+    const store = await loadStore("config.json");
+    await store.set("timelineZoom", timelineZoom.value);
+    await store.save();
+  }, 400);
 };
 
 const selectCalendarDate = (date: Date) => {
@@ -372,7 +404,7 @@ const togglePause = async () => {
 
 <template>
   <div class="h-screen w-screen flex flex-col overflow-hidden text-text-main bg-bg-main">
-    <Setup v-if="!isSetupComplete" />
+    <Setup v-if="!isSetupComplete" @complete="handleSetupComplete" />
     <div v-else class="flex flex-1 overflow-hidden">
       <!-- Sidebar -->
       <div class="w-80 bg-bg-sidebar border-r border-border-main flex flex-col select-none relative">
@@ -438,7 +470,7 @@ const togglePause = async () => {
                  :style="{ top: r.minute * timelineZoom + 'px' }"></div>
             
             <div v-for="ev in dayEvents" :key="ev.id" class="absolute left-0 w-[45%] opacity-80 border-l-4 cursor-pointer hover:opacity-100 hover:border-l-8 hover:z-50 hover:brightness-110" :style="{ top: ev.start_minute * timelineZoom + 'px', height: (ev.end_minute - ev.start_minute) * timelineZoom + 'px', backgroundColor: getTagColor(ev.main_tag_id) + '50', borderColor: getTagColor(ev.main_tag_id) }" @click.stop="editingEvent = { ...ev }; isEventModalOpen = true" @mousedown.stop @mouseenter="hoveredEventDetails = { event: ev, x: $event.clientX, y: $event.clientY }" @mousemove="hoveredEventDetails ? (hoveredEventDetails.x = $event.clientX, hoveredEventDetails.y = $event.clientY) : null" @mouseleave="hoveredEventDetails = null"></div>
-            <div v-for="img in timelineImages" :key="img.path" class="absolute left-[50%] right-2 h-0.5 bg-[#007AFF]/20 rounded-full" :class="[selectedImage?.path === img.path ? 'bg-[#007AFF]/60 h-1 z-10' : '', lockedImage?.path === img.path ? 'bg-[#007AFF] h-1.5 ring-2 ring-[#007AFF]/20 z-20' : '']" :style="{ top: timeToLogicalMinutes(img.time, img.isNextDay) * timelineZoom + 'px' }"></div>
+            <div v-for="img in timelineImages" :key="img.path" class="absolute left-[50%] right-2 h-0.5 bg-[#007AFF]/20 rounded-full" :class="[selectedImage?.path === img.path ? 'bg-[#007AFF]/60 h-1 z-10' : '', lockedImage?.path === img.path ? 'bg-[#007AFF] h-1.5 ring-2 ring-[#007AFF]/20 z-20' : '']" :style="{ top: (img.logical_minute ?? 0) * timelineZoom + 'px' }"></div>
             <div v-if="isDragging && dragStartMin !== null && dragEndMin !== null" class="absolute left-0 w-full bg-[#007AFF]/10 border-y-2 border-[#007AFF] pointer-events-none z-30" :style="{ top: Math.min(dragStartMin, dragEndMin) * timelineZoom + 'px', height: Math.abs(dragEndMin - dragStartMin) * timelineZoom + 'px' }"></div>
             <div v-if="hoveredTime" class="absolute left-0 right-0 border-t-2 border-[#007AFF] z-40 pointer-events-none" :style="{ top: timeToLogicalMinutes(hoveredTime, hoveredTime < '03:00') * timelineZoom + 'px' }"><div class="absolute -left-12 -top-3 bg-[#007AFF] text-white text-[9px] px-1 py-0.5 rounded font-bold">{{ hoveredTime }}</div></div>
             <div v-if="currentLogicalMinute >= 0" class="absolute left-0 right-0 border-t-2 border-[#FF3B30] z-30 pointer-events-none" :style="{ top: currentLogicalMinute * timelineZoom + 'px' }"><div class="absolute -left-12 -top-2.5 bg-[#FF3B30] text-white text-[9px] px-1 py-0.5 rounded font-bold shadow-[0_0_8px_rgba(255,59,48,0.5)]">{{ logicalMinutesToTime(currentLogicalMinute) }}</div></div>

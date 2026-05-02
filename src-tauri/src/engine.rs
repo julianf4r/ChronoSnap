@@ -32,9 +32,14 @@ pub fn get_tags(state: tauri::State<'_, AppState>) -> Result<Vec<crate::db::Tag>
 
 #[tauri::command]
 pub fn add_tag(state: tauri::State<'_, AppState>, name: String, parent_id: Option<i64>, color: String) -> Result<i64, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("标签名称不能为空".into());
+    }
+
     let path = state.db_path.lock().unwrap();
     let path = path.as_ref().ok_or("Database path not set")?;
-    crate::db::add_tag(path, &name, parent_id, &color).map_err(|e| e.to_string())
+    crate::db::add_tag(path, name, parent_id, &color).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -60,6 +65,19 @@ pub fn get_events_range(state: tauri::State<'_, AppState>, start_date: String, e
 
 #[tauri::command]
 pub fn save_event(state: tauri::State<'_, AppState>, event: crate::db::Event) -> Result<i64, String> {
+    if chrono::NaiveDate::parse_from_str(&event.date, "%Y-%m-%d").is_err() {
+        return Err("事件日期格式无效".into());
+    }
+    if event.start_minute < 0 || event.start_minute >= 1440 || event.end_minute <= 0 || event.end_minute > 1440 {
+        return Err("事件时间超出范围".into());
+    }
+    if event.end_minute <= event.start_minute {
+        return Err("结束时间必须晚于开始时间".into());
+    }
+    if event.main_tag_id <= 0 {
+        return Err("请选择主标签".into());
+    }
+
     let path = state.db_path.lock().unwrap();
     let path = path.as_ref().ok_or("Database path not set")?;
     crate::db::save_event(path, event).map_err(|e| e.to_string())
@@ -81,6 +99,16 @@ pub fn get_reminders(state: tauri::State<'_, AppState>, date: String) -> Result<
 
 #[tauri::command]
 pub fn save_reminder(state: tauri::State<'_, AppState>, reminder: crate::db::Reminder) -> Result<i64, String> {
+    if chrono::NaiveDate::parse_from_str(&reminder.date, "%Y-%m-%d").is_err() {
+        return Err("提醒日期格式无效".into());
+    }
+    if reminder.minute < 0 || reminder.minute >= 1440 {
+        return Err("提醒时间超出范围".into());
+    }
+    if reminder.content.trim().is_empty() {
+        return Err("提醒内容不能为空".into());
+    }
+
     let path = state.db_path.lock().unwrap();
     let path = path.as_ref().ok_or("Database path not set")?;
     crate::db::save_reminder(path, reminder).map_err(|e| e.to_string())
@@ -116,7 +144,7 @@ pub fn get_reminders_by_month(state: tauri::State<'_, AppState>, year_month: Str
 
 #[tauri::command]
 pub fn update_interval(state: tauri::State<'_, AppState>, seconds: u64) {
-    state.capture_interval_secs.store(seconds, Ordering::SeqCst);
+    state.capture_interval_secs.store(seconds.clamp(60, 600), Ordering::SeqCst);
 }
 
 #[tauri::command]

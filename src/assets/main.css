@@ -38,7 +38,7 @@ html.dark {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-  background-color: var(--bg-light);
+  background-color: var(--bg-main);
   color: var(--text-main);
   margin: 0;
   padding: 0;
@@ -48,13 +48,6 @@ body {
 * {
   box-sizing: border-box;
 }
-
-/* Base custom styles for utility-like usage */
-.bg-light { background-color: var(--bg-light); }
-.bg-sidebar { background-color: var(--sidebar-bg); }
-.text-main { color: var(--text-main); }
-.text-sec { color: var(--text-sec); }
-.border-main { border-color: var(--border-color); }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {

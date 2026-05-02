@@ -2,8 +2,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Settings, FolderOpen, Plus } from "lucide-vue-next";
-import { savePath, dbPath, isSetupComplete, loadTags, loadEvents } from "../store";
+import { savePath, dbPath, isSetupComplete, captureInterval, retainDays, theme } from "../store";
 import { load as loadStore } from "@tauri-apps/plugin-store";
+
+const emit = defineEmits(["complete"]);
 
 const selectFolder = async () => { const s = await open({ directory: true }); if (s) savePath.value = s as string; };
 const selectDBFile = async () => { const s = await open({ filters: [{ name: "SQLite", extensions: ["db"] }] }); if (s) dbPath.value = s as string; };
@@ -11,13 +13,19 @@ const createDBFile = async () => { const s = await save({ filters: [{ name: "SQL
 
 const completeSetup = async () => {
   if (savePath.value && dbPath.value) {
+    await invoke("update_db_path", { path: dbPath.value });
+    await invoke("update_interval", { seconds: captureInterval.value });
+
     const store = await loadStore("config.json");
     await store.set("savePath", savePath.value);
     await store.set("dbPath", dbPath.value);
+    await store.set("retainDays", retainDays.value);
+    await store.set("captureInterval", captureInterval.value);
+    await store.set("theme", theme.value);
     await store.save();
-    await invoke("update_db_path", { path: dbPath.value });
+
     isSetupComplete.value = true;
-    await loadTags(); await loadEvents();
+    emit("complete");
   }
 };
 </script>
