@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import { BarChart2, Calendar, ChevronLeft, ChevronRight } from "lucide-vue-next";
+import { BarChart2, Calendar, ChevronLeft, ChevronRight, X } from "lucide-vue-next";
 import { 
   dashboardStats, dashboardRange, dailyAverageMode,
-  customStartDate, customEndDate,
+  customStartDate, customEndDate, dashboardStartDate, dashboardEndDate,
   isStartCalendarOpen, isEndCalendarOpen,
-  formatMinutes, getTagColor, getTagName 
+  formatMinutes, getTagColor, getTagName, dashboardEvents
 } from "../../store/dashboardStore";
 import { toISODate } from "../../store";
 import { logicalMinutesToTime } from "../../store";
+import type { DBEvent } from "../../types";
 
 const startCalendarRef = ref<HTMLElement | null>(null);
 const endCalendarRef = ref<HTMLElement | null>(null);
@@ -48,6 +49,35 @@ const getCalendarDays = (month: Date) => {
 
 const startCalendarDays = computed(() => getCalendarDays(startCalendarMonth.value));
 const endCalendarDays = computed(() => getCalendarDays(endCalendarMonth.value));
+
+const selectedSubTag = ref<{ mainTagId: number; subTagId: number } | null>(null);
+
+const openSubTagDetails = (mainTagId: number, subTagId: number) => {
+  selectedSubTag.value = { mainTagId, subTagId };
+};
+
+const selectedSubTagEvents = computed(() => {
+  const selected = selectedSubTag.value;
+  if (!selected) return [];
+  return dashboardEvents.value
+    .filter(ev => ev.main_tag_id === selected.mainTagId && ev.sub_tag_id === selected.subTagId)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.start_minute - b.start_minute);
+});
+
+const selectedSubTagTotal = computed(() => {
+  return selectedSubTagEvents.value.reduce((sum, ev) => sum + Math.max(0, ev.end_minute - ev.start_minute), 0);
+});
+
+const selectedSubTagDailyGroups = computed(() => {
+  const map = new Map<string, { date: string; total: number; events: DBEvent[] }>();
+  selectedSubTagEvents.value.forEach(ev => {
+    if (!map.has(ev.date)) map.set(ev.date, { date: ev.date, total: 0, events: [] });
+    const group = map.get(ev.date)!;
+    group.total += Math.max(0, ev.end_minute - ev.start_minute);
+    group.events.push(ev);
+  });
+  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+});
 </script>
 
 <template>
@@ -167,7 +197,7 @@ const endCalendarDays = computed(() => getCalendarDays(endCalendarMonth.value));
                   <div v-for="ev in tag.events" :key="ev.id" class="bg-bg-input/60 rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-3">
                     <span class="font-bold text-text-main whitespace-nowrap">{{ ev.date }}</span>
                     <span class="text-text-sec font-bold whitespace-nowrap">{{ logicalMinutesToTime(ev.start_minute) }} - {{ logicalMinutesToTime(ev.end_minute) }}</span>
-                    <span class="text-text-sec truncate flex-1 text-right">{{ ev.content || '无备注' }}</span>
+                    <span class="text-text-sec truncate flex-1 text-right">{{ ev.content || '<无备注>' }}</span>
                   </div>
                 </div>
               </div>
@@ -195,7 +225,7 @@ const endCalendarDays = computed(() => getCalendarDays(endCalendarMonth.value));
             
             <!-- Sub-tags -->
             <div v-if="tag.subTags.length > 0" class="pl-7 space-y-3 pt-4 border-t border-border-main/50">
-               <div v-for="sub in tag.subTags" :key="sub.id" class="flex justify-between items-center group gap-4">
+               <button v-for="sub in tag.subTags" :key="sub.id" @click="openSubTagDetails(tag.id, sub.id)" class="w-full flex justify-between items-center group gap-4 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-bg-input/70">
                   <span class="text-xs text-text-main font-bold w-16 truncate">{{ getTagName(sub.id) }}</span>
                   <div class="flex items-center gap-3 flex-1 justify-end">
                      <div class="w-full max-w-50 h-1.5 bg-bg-input rounded-full overflow-hidden shadow-inner">
@@ -203,7 +233,7 @@ const endCalendarDays = computed(() => getCalendarDays(endCalendarMonth.value));
                      </div>
                      <span class="text-[10px] font-bold text-text-sec whitespace-nowrap min-w-10 text-right">{{ formatMinutes(sub.total) }}</span>
                   </div>
-               </div>
+               </button>
             </div>
          </div>
          
@@ -211,6 +241,48 @@ const endCalendarDays = computed(() => getCalendarDays(endCalendarMonth.value));
            <BarChart2 :size="48" class="mx-auto mb-4 text-text-sec opacity-20" />
            <div class="text-text-sec font-bold">该时间范围内没有记录数据</div>
          </div>
+      </div>
+    </div>
+
+    <div v-if="selectedSubTag" class="fixed inset-0 z-120 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" @click.self="selectedSubTag = null">
+      <div class="bg-bg-card rounded-[32px] shadow-2xl w-full max-w-3xl max-h-[86vh] overflow-hidden flex flex-col border border-border-main">
+        <div class="p-7 border-b border-border-main/60 flex items-start justify-between gap-6">
+          <div class="min-w-0">
+            <div class="flex items-center gap-3 mb-2">
+              <div class="w-3.5 h-3.5 rounded-full shrink-0" :style="{ backgroundColor: getTagColor(selectedSubTag.mainTagId) }"></div>
+              <h2 class="text-xl font-black truncate">{{ getTagName(selectedSubTag.mainTagId) }} / {{ getTagName(selectedSubTag.subTagId) }}</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 text-[11px] font-bold text-text-sec">
+              <span class="bg-bg-input px-2 py-1 rounded-lg border border-border-main/40">总时长 {{ formatMinutes(selectedSubTagTotal) }}</span>
+              <span class="bg-bg-input px-2 py-1 rounded-lg border border-border-main/40">事件 {{ selectedSubTagEvents.length }} 条</span>
+              <span class="bg-bg-input px-2 py-1 rounded-lg border border-border-main/40">{{ dashboardStartDate }} 至 {{ dashboardEndDate }}</span>
+            </div>
+          </div>
+          <button @click="selectedSubTag = null" class="p-2 text-text-sec hover:text-text-main hover:bg-bg-input rounded-xl shrink-0"><X :size="22" /></button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-7 no-scrollbar">
+          <div v-if="selectedSubTagDailyGroups.length > 0" class="space-y-6">
+            <div v-for="group in selectedSubTagDailyGroups" :key="group.date" class="space-y-3">
+              <div class="flex items-center justify-between gap-4">
+                <div class="font-black text-sm text-text-main">{{ group.date }}</div>
+                <div class="text-xs font-bold text-[#007AFF] bg-bg-input px-2 py-1 rounded-lg">{{ formatMinutes(group.total) }}</div>
+              </div>
+              <div class="space-y-2">
+                <div v-for="ev in group.events" :key="ev.id" class="bg-bg-input/60 border border-border-main/40 rounded-2xl p-4">
+                  <div class="flex items-center justify-between gap-4 mb-2">
+                    <div class="text-xs font-black text-text-main whitespace-nowrap">{{ logicalMinutesToTime(ev.start_minute) }} - {{ logicalMinutesToTime(ev.end_minute) }}</div>
+                    <div class="text-[11px] font-bold text-text-sec whitespace-nowrap">{{ formatMinutes(Math.max(0, ev.end_minute - ev.start_minute)) }}</div>
+                  </div>
+                  <div class="text-sm text-text-main leading-relaxed whitespace-pre-wrap wrap-break-words">{{ ev.content || '<无备注>' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-center py-16 text-text-sec font-bold">
+            当前范围内没有该副标签的事件
+          </div>
+        </div>
       </div>
     </div>
   </div>
