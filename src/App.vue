@@ -284,9 +284,16 @@ const updatePreview = async (img: TimelineItem | null) => {
 };
 
 // --- Timeline Handlers ---
+const getTimelineMinuteFromMouse = (e: MouseEvent) => {
+  if (!timelineRef.value) return null;
+  const rect = timelineRef.value.getBoundingClientRect();
+  const min = Math.floor((e.clientY - rect.top + timelineRef.value.scrollTop) / timelineZoom.value);
+  return Math.min(Math.max(min, 0), TOTAL_MINUTES - 1);
+};
+
 const handleTimelineMouseDown = (e: MouseEvent) => {
-  if (!timelineRef.value) return;
-  const min = Math.floor((e.clientY - timelineRef.value.getBoundingClientRect().top + timelineRef.value.scrollTop) / timelineZoom.value);
+  const min = getTimelineMinuteFromMouse(e);
+  if (min === null) return;
   isDragging.value = true; dragStartMin.value = min; dragEndMin.value = min;
 };
 
@@ -326,6 +333,39 @@ const findOverlappingEvent = (event: DBEvent) => {
 
 const formatEventRange = (event: DBEvent) => {
   return `${logicalMinutesToTime(event.start_minute)} - ${logicalMinutesToTime(event.end_minute)}`;
+};
+
+const openEventFromTimelineGap = (end: number) => {
+  const clickedEvent = dayEvents.value.find(ev => ev.start_minute <= end && ev.end_minute > end);
+  if (clickedEvent) return;
+
+  const previousEventEnd = dayEvents.value
+    .filter(ev => ev.end_minute <= end)
+    .reduce((latest, ev) => Math.max(latest, ev.end_minute), 0);
+
+  if (end <= previousEventEnd) {
+    showToast("该位置前没有可添加的空白时间段", "error");
+    return;
+  }
+
+  const newEvent: DBEvent = {
+    id: 0,
+    date: currentDate.value,
+    start_minute: previousEventEnd,
+    end_minute: end,
+    main_tag_id: mainTags.value[0]?.id || 0,
+    sub_tag_id: null,
+    content: ""
+  };
+
+  const overlap = findOverlappingEvent(newEvent);
+  if (overlap) {
+    showToast(`时间段与已有事件 ${formatEventRange(overlap)} 重叠`, "error");
+    return;
+  }
+
+  editingEvent.value = newEvent;
+  isEventModalOpen.value = true;
 };
 
 // Request Animation Frame lock for mouse move
@@ -399,6 +439,12 @@ const handleTimelineWheel = (e: WheelEvent) => {
     timelineRef.value.scrollTop = (cy / oh) * (TOTAL_MINUTES * timelineZoom.value) - my;
     persistTimelineZoom();
   }
+};
+
+const handleTimelineDblClick = (e: MouseEvent) => {
+  const end = getTimelineMinuteFromMouse(e);
+  if (end === null) return;
+  openEventFromTimelineGap(end);
 };
 
 const persistTimelineZoom = () => {
@@ -520,7 +566,7 @@ const togglePause = async () => {
           </div>
         </div>
 
-        <div ref="timelineRef" class="flex-1 overflow-y-auto no-scrollbar hover:cursor-crosshair relative" @mousedown="handleTimelineMouseDown" @mousemove="handleTimelineMouseMove" @mouseup="handleTimelineMouseUp" @mouseleave="handleTimelineMouseLeave" @wheel="handleTimelineWheel">
+        <div ref="timelineRef" class="flex-1 overflow-y-auto no-scrollbar hover:cursor-crosshair relative" @mousedown="handleTimelineMouseDown" @mousemove="handleTimelineMouseMove" @mouseup="handleTimelineMouseUp" @mouseleave="handleTimelineMouseLeave" @wheel="handleTimelineWheel" @dblclick="handleTimelineDblClick">
           <div :style="{ height: TOTAL_MINUTES * timelineZoom + 'px' }" class="relative ml-14 mr-4">
             <div v-for="h in 24" :key="h" class="absolute left-0 w-full border-t border-border-main/60" :style="{ top: (h-1) * 60 * timelineZoom + 'px' }">
               <span v-if="h > 1" class="absolute -left-11 -top-2.5 text-[10px] font-bold text-text-sec">{{ String((h - 1 + 3) % 24).padStart(2, '0') }}:00</span>
@@ -534,7 +580,7 @@ const togglePause = async () => {
                           : 'bg-[#007AFF] shadow-[0_0_8px_rgba(0,122,255,0.6)]')" 
                  :style="{ top: r.minute * timelineZoom + 'px' }"></div>
             
-            <div v-for="ev in dayEvents" :key="ev.id" class="absolute left-0 w-[45%] opacity-80 border-l-4 cursor-pointer hover:opacity-100 hover:border-l-8 hover:z-50 hover:brightness-110" :style="{ top: ev.start_minute * timelineZoom + 'px', height: (ev.end_minute - ev.start_minute) * timelineZoom + 'px', backgroundColor: getTagColor(ev.main_tag_id) + '50', borderColor: getTagColor(ev.main_tag_id) }" @click.stop="editingEvent = { ...ev }; isEventModalOpen = true" @mousedown.stop @mouseenter="hoveredEventDetails = { event: ev, x: $event.clientX, y: $event.clientY }" @mousemove="hoveredEventDetails ? (hoveredEventDetails.x = $event.clientX, hoveredEventDetails.y = $event.clientY) : null" @mouseleave="hoveredEventDetails = null"></div>
+            <div v-for="ev in dayEvents" :key="ev.id" class="absolute left-0 w-[45%] opacity-80 border-l-4 cursor-pointer hover:opacity-100 hover:border-l-8 hover:z-50 hover:brightness-110" :style="{ top: ev.start_minute * timelineZoom + 'px', height: (ev.end_minute - ev.start_minute) * timelineZoom + 'px', backgroundColor: getTagColor(ev.main_tag_id) + '50', borderColor: getTagColor(ev.main_tag_id) }" @click.stop="editingEvent = { ...ev }; isEventModalOpen = true" @dblclick.stop @mousedown.stop @mouseenter="hoveredEventDetails = { event: ev, x: $event.clientX, y: $event.clientY }" @mousemove="hoveredEventDetails ? (hoveredEventDetails.x = $event.clientX, hoveredEventDetails.y = $event.clientY) : null" @mouseleave="hoveredEventDetails = null"></div>
             <div v-for="img in timelineImages" :key="img.path" class="absolute left-[50%] right-2 h-0.5 bg-[#007AFF]/20 rounded-full" :class="[selectedImage?.path === img.path ? 'bg-[#007AFF]/60 h-1 z-10' : '', lockedImage?.path === img.path ? 'bg-[#007AFF] h-1.5 ring-2 ring-[#007AFF]/20 z-20' : '']" :style="{ top: (img.logical_minute ?? 0) * timelineZoom + 'px' }"></div>
             <div v-if="isDragging && dragStartMin !== null && dragEndMin !== null" class="absolute left-0 w-full bg-[#007AFF]/10 border-y-2 border-[#007AFF] pointer-events-none z-30" :style="{ top: Math.min(dragStartMin, dragEndMin) * timelineZoom + 'px', height: Math.abs(dragEndMin - dragStartMin) * timelineZoom + 'px' }"></div>
             <div v-if="hoveredTime" class="absolute left-0 right-0 border-t-2 border-[#007AFF] z-40 pointer-events-none" :style="{ top: timeToLogicalMinutes(hoveredTime, hoveredTime < '03:00') * timelineZoom + 'px' }"><div class="absolute -left-12 -top-3 bg-[#007AFF] text-white text-[9px] px-1 py-0.5 rounded font-bold">{{ hoveredTime }}</div></div>
