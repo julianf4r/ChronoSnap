@@ -2,7 +2,8 @@
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from "vue";
 import { load as loadStore } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow, type Theme as SystemTheme } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { 
   RefreshCw, Calendar, ChevronLeft, ChevronRight, Play, Pause, SquarePlus, Tag as TagIcon, Download, Settings, X, Image as ImageIcon, BarChart2, Trash2, Bell, AlertTriangle
@@ -119,6 +120,8 @@ const updateCurrentMinute = () => {
 let currentMinuteTimeout: number | null = null;
 let currentMinuteInterval: number | null = null;
 let captureUnlisten: any = null;
+let themeUnlisten: UnlistenFn | null = null;
+let currentSystemTheme: SystemTheme | null = null;
 let timelineZoomSaveTimeout: number | null = null;
 const previewCache = new Map<string, string>();
 const MAX_PREVIEW_CACHE_SIZE = 30;
@@ -147,6 +150,14 @@ watch(currentDate, () => {
 onMounted(async () => {
   window.addEventListener('mousedown', handleClickOutside);
   startMinuteTimer();
+
+  const appWindow = getCurrentWindow();
+  themeUnlisten = await appWindow.onThemeChanged(({ payload: systemTheme }) => {
+    currentSystemTheme = systemTheme;
+    if (theme.value === 'system') applyTheme(theme.value);
+  });
+  currentSystemTheme = await appWindow.theme();
+  applyTheme(theme.value);
   
   const store = await loadStore("config.json");
   const path = await store.get<string>("savePath");
@@ -180,6 +191,7 @@ onUnmounted(() => {
   if (currentMinuteInterval) window.clearInterval(currentMinuteInterval);
   if (timelineZoomSaveTimeout) window.clearTimeout(timelineZoomSaveTimeout);
   if (captureUnlisten) captureUnlisten(); 
+  if (themeUnlisten) themeUnlisten();
 });
 
 const handleSetupComplete = async () => {
@@ -241,7 +253,10 @@ const handleClickOutside = (event: MouseEvent) => {
 };
 
 const applyTheme = (val: string) => {
-  const isDark = val === 'dark' || (val === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const systemIsDark = currentSystemTheme
+    ? currentSystemTheme === 'dark'
+    : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = val === 'dark' || (val === 'system' && systemIsDark);
   document.documentElement.classList.toggle('dark', isDark);
 };
 
