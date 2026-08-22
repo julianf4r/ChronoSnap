@@ -1,6 +1,6 @@
 [package]
 name = "chrono-snap"
-version = "0.2.7"
+version = "0.2.8"
 description = "An app to record screens and events"
 authors = ["Julian F."]
 edition = "2021"
