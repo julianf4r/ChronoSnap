@@ -612,7 +612,7 @@ onUnmounted(() => {
                 </span>
                 <ChevronDown :size="15" class="text-text-sec transition-transform" :class="isMainTagSelectOpen ? 'rotate-180' : ''" />
               </button>
-              <div v-if="isMainTagSelectOpen" class="absolute top-full left-0 right-0 mt-2 bg-bg-card rounded-2xl shadow-xl border border-border-main z-140 overflow-hidden py-2 animate-in fade-in zoom-in-95">
+              <div v-if="isMainTagSelectOpen" class="absolute top-full left-0 right-0 mt-2 bg-bg-card rounded-2xl shadow-xl border border-border-main z-140 max-h-64 overflow-y-auto py-2 animate-in fade-in zoom-in-95">
                 <button @click="chooseMainTag(null)" class="w-full px-4 py-2.5 text-sm text-left hover:bg-bg-input transition-colors" :class="editingTask.main_tag_id === null ? 'text-[#007AFF] font-bold' : 'text-text-main'">无标签</button>
                 <button v-for="tag in mainTags" :key="tag.id" @click="chooseMainTag(tag.id)" class="w-full px-4 py-2.5 text-sm text-left hover:bg-bg-input transition-colors flex items-center gap-2" :class="editingTask.main_tag_id === tag.id ? 'text-[#007AFF] font-bold' : 'text-text-main'">
                   <span class="w-3 h-3 rounded-full shrink-0" :style="{ backgroundColor: tag.color }"></span>
@@ -626,7 +626,7 @@ onUnmounted(() => {
                 <span class="truncate">{{ editingTask.sub_tag_id ? getTagName(editingTask.sub_tag_id) : '无副标签' }}</span>
                 <ChevronDown :size="15" class="text-text-sec transition-transform" :class="isSubTagSelectOpen ? 'rotate-180' : ''" />
               </button>
-              <div v-if="isSubTagSelectOpen" class="absolute top-full left-0 right-0 mt-2 bg-bg-card rounded-2xl shadow-xl border border-border-main z-140 overflow-hidden py-2 animate-in fade-in zoom-in-95">
+              <div v-if="isSubTagSelectOpen" class="absolute top-full left-0 right-0 mt-2 bg-bg-card rounded-2xl shadow-xl border border-border-main z-140 max-h-64 overflow-y-auto py-2 animate-in fade-in zoom-in-95">
                 <button @click="chooseSubTag(null)" class="w-full px-4 py-2.5 text-sm text-left hover:bg-bg-input transition-colors" :class="editingTask.sub_tag_id === null ? 'text-[#007AFF] font-bold' : 'text-text-main'">无副标签</button>
                 <button v-for="tag in getSubTags(editingTask.main_tag_id || 0)" :key="tag.id" @click="chooseSubTag(tag.id)" class="w-full px-4 py-2.5 text-sm text-left hover:bg-bg-input transition-colors" :class="editingTask.sub_tag_id === tag.id ? 'text-[#007AFF] font-bold' : 'text-text-main'">{{ tag.name }}</button>
               </div>
