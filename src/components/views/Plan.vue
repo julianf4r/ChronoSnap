@@ -2,8 +2,11 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  Calendar,
   CalendarDays,
   Check,
+  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   EyeOff,
@@ -38,6 +41,16 @@ const onlyFocusDate = ref(false);
 const hideCompleted = ref(true);
 const editingTask = ref<PlanTask | null>(null);
 const suppressTaskClick = ref<number | null>(null);
+const startCalendarRef = ref<HTMLElement | null>(null);
+const endCalendarRef = ref<HTMLElement | null>(null);
+const mainTagSelectRef = ref<HTMLElement | null>(null);
+const subTagSelectRef = ref<HTMLElement | null>(null);
+const isStartCalendarOpen = ref(false);
+const isEndCalendarOpen = ref(false);
+const isMainTagSelectOpen = ref(false);
+const isSubTagSelectOpen = ref(false);
+const startCalendarMonth = ref(parseISODate(currentDate.value));
+const endCalendarMonth = ref(parseISODate(currentDate.value));
 
 const logicalToday = computed(() => todayLogicalDate.value);
 
@@ -122,13 +135,29 @@ const createTaskDraft = (): PlanTask => ({
   completed_at: null,
 });
 
+const closeTaskPickers = () => {
+  isStartCalendarOpen.value = false;
+  isEndCalendarOpen.value = false;
+  isMainTagSelectOpen.value = false;
+  isSubTagSelectOpen.value = false;
+};
+
+const prepareTaskEditor = () => {
+  closeTaskPickers();
+  if (!editingTask.value) return;
+  startCalendarMonth.value = parseISODate(editingTask.value.start_date);
+  endCalendarMonth.value = parseISODate(editingTask.value.end_date);
+};
+
 const openNewTask = () => {
   editingTask.value = createTaskDraft();
+  prepareTaskEditor();
 };
 
 const openTask = (task: PlanTask) => {
   if (suppressTaskClick.value === task.id) return;
   editingTask.value = { ...task };
+  prepareTaskEditor();
 };
 
 const handleMainTagChange = () => {
@@ -136,6 +165,78 @@ const handleMainTagChange = () => {
   const validSubTag = getSubTags(editingTask.value.main_tag_id ?? 0)
     .some(tag => tag.id === editingTask.value?.sub_tag_id);
   if (!validSubTag) editingTask.value.sub_tag_id = null;
+};
+
+const chooseMainTag = (tagId: number | null) => {
+  if (!editingTask.value) return;
+  editingTask.value.main_tag_id = tagId;
+  handleMainTagChange();
+  isMainTagSelectOpen.value = false;
+};
+
+const chooseSubTag = (tagId: number | null) => {
+  if (!editingTask.value) return;
+  editingTask.value.sub_tag_id = tagId;
+  isSubTagSelectOpen.value = false;
+};
+
+const getCalendarDays = (month: Date) => {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstDay = new Date(year, monthIndex, 1).getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const padding = (firstDay + 6) % 7;
+  return [
+    ...Array.from({ length: padding }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => new Date(year, monthIndex, index + 1)),
+  ];
+};
+
+const startCalendarDays = computed(() => getCalendarDays(startCalendarMonth.value));
+const endCalendarDays = computed(() => getCalendarDays(endCalendarMonth.value));
+
+const openStartCalendar = () => {
+  if (!editingTask.value) return;
+  const willOpen = !isStartCalendarOpen.value;
+  closeTaskPickers();
+  startCalendarMonth.value = parseISODate(editingTask.value.start_date);
+  isStartCalendarOpen.value = willOpen;
+};
+
+const openEndCalendar = () => {
+  if (!editingTask.value) return;
+  const willOpen = !isEndCalendarOpen.value;
+  closeTaskPickers();
+  endCalendarMonth.value = parseISODate(editingTask.value.end_date);
+  isEndCalendarOpen.value = willOpen;
+};
+
+const selectStartDate = (date: Date) => {
+  if (!editingTask.value) return;
+  editingTask.value.start_date = toISODate(date);
+  isStartCalendarOpen.value = false;
+};
+
+const selectEndDate = (date: Date) => {
+  if (!editingTask.value) return;
+  editingTask.value.end_date = toISODate(date);
+  isEndCalendarOpen.value = false;
+};
+
+const handleTaskEditorClickOutside = (event: MouseEvent) => {
+  const target = event.target as HTMLElement;
+  if (isStartCalendarOpen.value && startCalendarRef.value && !startCalendarRef.value.contains(target)) {
+    isStartCalendarOpen.value = false;
+  }
+  if (isEndCalendarOpen.value && endCalendarRef.value && !endCalendarRef.value.contains(target)) {
+    isEndCalendarOpen.value = false;
+  }
+  if (isMainTagSelectOpen.value && mainTagSelectRef.value && !mainTagSelectRef.value.contains(target)) {
+    isMainTagSelectOpen.value = false;
+  }
+  if (isSubTagSelectOpen.value && subTagSelectRef.value && !subTagSelectRef.value.contains(target)) {
+    isSubTagSelectOpen.value = false;
+  }
 };
 
 const saveTask = async () => {
@@ -276,10 +377,14 @@ const formatDay = (date: string) => {
 
 const weekdayName = (date: string) => "日一二三四五六"[parseISODate(date).getDay()];
 
-onMounted(loadPlanTasks);
+onMounted(() => {
+  loadPlanTasks();
+  window.addEventListener("mousedown", handleTaskEditorClickOutside);
+});
 onUnmounted(() => {
   window.removeEventListener("mousemove", handleTaskDrag);
   window.removeEventListener("mouseup", finishTaskDrag);
+  window.removeEventListener("mousedown", handleTaskEditorClickOutside);
 });
 </script>
 
@@ -288,10 +393,7 @@ onUnmounted(() => {
     <div class="px-6 py-5 border-b border-border-main/70 bg-bg-card/60">
       <div class="flex items-start justify-between gap-6">
         <div>
-          <div class="flex items-center gap-2 mb-2">
-            <span class="text-sm font-black text-text-main">{{ focusIsToday ? "今天" : currentDate }}</span>
-            <span class="text-[10px] font-bold text-text-sec bg-bg-input px-2 py-1 rounded-lg">03:00 起算</span>
-          </div>
+          <div class="text-sm font-black text-text-main mb-2">{{ focusIsToday ? "今天" : currentDate }}</div>
           <div v-if="focusIsToday" class="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-bold">
             <span class="text-[#007AFF]">进行中 {{ summary.active }} 项</span>
             <span :class="summary.overdue ? 'text-[#FF3B30]' : 'text-text-sec'">已逾期 {{ summary.overdue }} 项</span>
@@ -437,12 +539,9 @@ onUnmounted(() => {
     </div>
 
     <div v-if="editingTask" class="fixed inset-0 z-120 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" @click.self="editingTask = null">
-      <div class="bg-bg-card rounded-4xl shadow-2xl w-full max-w-xl overflow-hidden border border-border-main">
+      <div class="bg-bg-card rounded-4xl shadow-2xl w-full max-w-xl border border-border-main">
         <div class="p-7 border-b border-border-main/60 flex items-center justify-between">
-          <div>
-            <h2 class="text-xl font-black">{{ editingTask.id ? "编辑任务" : "新建任务" }}</h2>
-            <p class="text-xs font-bold text-text-sec mt-1">任务日期按每天 03:00 开始计算</p>
-          </div>
+          <h2 class="text-xl font-black">{{ editingTask.id ? "编辑任务" : "新建任务" }}</h2>
           <button @click="editingTask = null" class="p-2 rounded-xl text-text-sec hover:bg-bg-input hover:text-text-main"><X :size="22" /></button>
         </div>
 
@@ -453,30 +552,80 @@ onUnmounted(() => {
           </div>
 
           <div class="grid grid-cols-2 gap-4">
-            <div>
+            <div ref="startCalendarRef" class="relative">
               <label class="text-[10px] font-bold text-text-sec block mb-2">开始日期</label>
-              <input v-model="editingTask.start_date" type="date" class="w-full bg-bg-input border border-transparent rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:bg-bg-card focus:border-[#007AFF]/40" />
+              <button @click="openStartCalendar" class="w-full bg-bg-input border border-transparent rounded-2xl pl-11 pr-4 py-3 text-sm font-bold text-left flex items-center hover:bg-bg-hover transition-all" :class="isStartCalendarOpen ? 'ring-2 ring-[#007AFF]/30 bg-bg-card' : ''">
+                <Calendar :size="16" class="absolute left-4 text-[#007AFF]" />
+                {{ editingTask.start_date }}
+              </button>
+              <div v-if="isStartCalendarOpen" class="absolute top-full left-0 mt-2 bg-bg-card rounded-3xl shadow-2xl border border-border-main z-140 p-5 w-72 animate-in fade-in zoom-in-95">
+                <div class="flex items-center justify-between mb-4">
+                  <button @click="startCalendarMonth = new Date(startCalendarMonth.getFullYear(), startCalendarMonth.getMonth() - 1, 1)" class="p-2 hover:bg-bg-input rounded-xl"><ChevronLeft :size="16" /></button>
+                  <span class="text-sm font-black">{{ startCalendarMonth.getFullYear() }}年 {{ startCalendarMonth.getMonth() + 1 }}月</span>
+                  <button @click="startCalendarMonth = new Date(startCalendarMonth.getFullYear(), startCalendarMonth.getMonth() + 1, 1)" class="p-2 hover:bg-bg-input rounded-xl"><ChevronRight :size="16" /></button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center mb-2">
+                  <div v-for="day in ['一', '二', '三', '四', '五', '六', '日']" :key="day" class="text-[10px] font-bold text-text-sec">{{ day }}</div>
+                </div>
+                <div class="grid grid-cols-7 gap-1">
+                  <div v-for="(date, index) in startCalendarDays" :key="index" class="aspect-square flex items-center justify-center">
+                    <button v-if="date" @click="selectStartDate(date)" class="w-8 h-8 rounded-full text-xs font-medium transition-all" :class="toISODate(date) === editingTask.start_date ? 'bg-[#007AFF] text-white font-bold' : 'hover:bg-bg-input text-text-main'">{{ date.getDate() }}</button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
+            <div ref="endCalendarRef" class="relative">
               <label class="text-[10px] font-bold text-text-sec block mb-2">结束日期</label>
-              <input v-model="editingTask.end_date" type="date" class="w-full bg-bg-input border border-transparent rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:bg-bg-card focus:border-[#007AFF]/40" />
+              <button @click="openEndCalendar" class="w-full bg-bg-input border border-transparent rounded-2xl pl-11 pr-4 py-3 text-sm font-bold text-left flex items-center hover:bg-bg-hover transition-all" :class="isEndCalendarOpen ? 'ring-2 ring-[#007AFF]/30 bg-bg-card' : ''">
+                <Calendar :size="16" class="absolute left-4 text-[#007AFF]" />
+                {{ editingTask.end_date }}
+              </button>
+              <div v-if="isEndCalendarOpen" class="absolute top-full right-0 mt-2 bg-bg-card rounded-3xl shadow-2xl border border-border-main z-140 p-5 w-72 animate-in fade-in zoom-in-95">
+                <div class="flex items-center justify-between mb-4">
+                  <button @click="endCalendarMonth = new Date(endCalendarMonth.getFullYear(), endCalendarMonth.getMonth() - 1, 1)" class="p-2 hover:bg-bg-input rounded-xl"><ChevronLeft :size="16" /></button>
+                  <span class="text-sm font-black">{{ endCalendarMonth.getFullYear() }}年 {{ endCalendarMonth.getMonth() + 1 }}月</span>
+                  <button @click="endCalendarMonth = new Date(endCalendarMonth.getFullYear(), endCalendarMonth.getMonth() + 1, 1)" class="p-2 hover:bg-bg-input rounded-xl"><ChevronRight :size="16" /></button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center mb-2">
+                  <div v-for="day in ['一', '二', '三', '四', '五', '六', '日']" :key="day" class="text-[10px] font-bold text-text-sec">{{ day }}</div>
+                </div>
+                <div class="grid grid-cols-7 gap-1">
+                  <div v-for="(date, index) in endCalendarDays" :key="index" class="aspect-square flex items-center justify-center">
+                    <button v-if="date" @click="selectEndDate(date)" class="w-8 h-8 rounded-full text-xs font-medium transition-all" :class="toISODate(date) === editingTask.end_date ? 'bg-[#007AFF] text-white font-bold' : 'hover:bg-bg-input text-text-main'">{{ date.getDate() }}</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
           <div class="grid grid-cols-2 gap-4">
-            <div>
+            <div ref="mainTagSelectRef" class="relative">
               <label class="text-[10px] font-bold text-text-sec block mb-2">主标签（可选）</label>
-              <select v-model="editingTask.main_tag_id" @change="handleMainTagChange" class="w-full bg-bg-input border border-transparent rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:bg-bg-card focus:border-[#007AFF]/40">
-                <option :value="null">无标签</option>
-                <option v-for="tag in mainTags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
-              </select>
+              <button @click="isMainTagSelectOpen = !isMainTagSelectOpen; isSubTagSelectOpen = false; isStartCalendarOpen = false; isEndCalendarOpen = false" class="w-full bg-bg-input border border-transparent rounded-2xl px-4 py-3 text-sm font-bold text-left flex items-center justify-between hover:bg-bg-hover transition-all" :class="isMainTagSelectOpen ? 'ring-2 ring-[#007AFF]/30 bg-bg-card' : ''">
+                <span class="flex items-center gap-2 min-w-0">
+                  <span v-if="editingTask.main_tag_id" class="w-3 h-3 rounded-full shrink-0" :style="{ backgroundColor: getTagColor(editingTask.main_tag_id) }"></span>
+                  <span class="truncate">{{ editingTask.main_tag_id ? getTagName(editingTask.main_tag_id) : '无标签' }}</span>
+                </span>
+                <ChevronDown :size="15" class="text-text-sec transition-transform" :class="isMainTagSelectOpen ? 'rotate-180' : ''" />
+              </button>
+              <div v-if="isMainTagSelectOpen" class="absolute top-full left-0 right-0 mt-2 bg-bg-card rounded-2xl shadow-xl border border-border-main z-140 overflow-hidden py-2 animate-in fade-in zoom-in-95">
+                <button @click="chooseMainTag(null)" class="w-full px-4 py-2.5 text-sm text-left hover:bg-bg-input transition-colors" :class="editingTask.main_tag_id === null ? 'text-[#007AFF] font-bold' : 'text-text-main'">无标签</button>
+                <button v-for="tag in mainTags" :key="tag.id" @click="chooseMainTag(tag.id)" class="w-full px-4 py-2.5 text-sm text-left hover:bg-bg-input transition-colors flex items-center gap-2" :class="editingTask.main_tag_id === tag.id ? 'text-[#007AFF] font-bold' : 'text-text-main'">
+                  <span class="w-3 h-3 rounded-full shrink-0" :style="{ backgroundColor: tag.color }"></span>
+                  <span class="truncate">{{ tag.name }}</span>
+                </button>
+              </div>
             </div>
-            <div>
+            <div ref="subTagSelectRef" class="relative">
               <label class="text-[10px] font-bold text-text-sec block mb-2">副标签（可选）</label>
-              <select v-model="editingTask.sub_tag_id" :disabled="!editingTask.main_tag_id || !getSubTags(editingTask.main_tag_id).length" class="w-full bg-bg-input border border-transparent rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:bg-bg-card focus:border-[#007AFF]/40 disabled:opacity-45">
-                <option :value="null">无副标签</option>
-                <option v-for="tag in getSubTags(editingTask.main_tag_id || 0)" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
-              </select>
+              <button @click="isSubTagSelectOpen = !isSubTagSelectOpen; isMainTagSelectOpen = false; isStartCalendarOpen = false; isEndCalendarOpen = false" :disabled="!editingTask.main_tag_id || !getSubTags(editingTask.main_tag_id).length" class="w-full bg-bg-input border border-transparent rounded-2xl px-4 py-3 text-sm font-bold text-left flex items-center justify-between hover:bg-bg-hover transition-all disabled:opacity-45 disabled:hover:bg-bg-input" :class="isSubTagSelectOpen ? 'ring-2 ring-[#007AFF]/30 bg-bg-card' : ''">
+                <span class="truncate">{{ editingTask.sub_tag_id ? getTagName(editingTask.sub_tag_id) : '无副标签' }}</span>
+                <ChevronDown :size="15" class="text-text-sec transition-transform" :class="isSubTagSelectOpen ? 'rotate-180' : ''" />
+              </button>
+              <div v-if="isSubTagSelectOpen" class="absolute top-full left-0 right-0 mt-2 bg-bg-card rounded-2xl shadow-xl border border-border-main z-140 overflow-hidden py-2 animate-in fade-in zoom-in-95">
+                <button @click="chooseSubTag(null)" class="w-full px-4 py-2.5 text-sm text-left hover:bg-bg-input transition-colors" :class="editingTask.sub_tag_id === null ? 'text-[#007AFF] font-bold' : 'text-text-main'">无副标签</button>
+                <button v-for="tag in getSubTags(editingTask.main_tag_id || 0)" :key="tag.id" @click="chooseSubTag(tag.id)" class="w-full px-4 py-2.5 text-sm text-left hover:bg-bg-input transition-colors" :class="editingTask.sub_tag_id === tag.id ? 'text-[#007AFF] font-bold' : 'text-text-main'">{{ tag.name }}</button>
+              </div>
             </div>
           </div>
 
