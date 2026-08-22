@@ -35,6 +35,19 @@ pub struct Reminder {
     pub is_completed: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PlanTask {
+    pub id: i64,
+    pub title: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub main_tag_id: Option<i64>,
+    pub sub_tag_id: Option<i64>,
+    pub notes: String,
+    pub is_completed: bool,
+    pub completed_at: Option<String>,
+}
+
 pub fn init_db(path: &str) -> anyhow::Result<()> {
     let conn = open_connection(path)?;
     
@@ -81,7 +94,31 @@ pub fn init_db(path: &str) -> anyhow::Result<()> {
     )?;
 
     conn.execute(
+        "CREATE TABLE IF NOT EXISTS plan_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            main_tag_id INTEGER,
+            sub_tag_id INTEGER,
+            notes TEXT NOT NULL DEFAULT '',
+            is_completed BOOLEAN NOT NULL DEFAULT 0,
+            completed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(main_tag_id) REFERENCES tags(id),
+            FOREIGN KEY(sub_tag_id) REFERENCES tags(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_reminders_date_minute ON reminders(date, minute)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_plan_tasks_dates ON plan_tasks(start_date, end_date)",
         [],
     )?;
 
@@ -130,6 +167,20 @@ pub fn delete_tag(path: &str, id: i64) -> anyhow::Result<()> {
 
     if used_count > 0 {
         anyhow::bail!("该标签或其子标签正在被事件使用，无法删除");
+    }
+
+    let task_used_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM plan_tasks
+         WHERE main_tag_id = ?1
+            OR sub_tag_id = ?1
+            OR main_tag_id IN (SELECT id FROM tags WHERE parent_id = ?1)
+            OR sub_tag_id IN (SELECT id FROM tags WHERE parent_id = ?1)",
+        params![id],
+        |row| row.get(0),
+    )?;
+
+    if task_used_count > 0 {
+        anyhow::bail!("该标签或其子标签正在被任务使用，无法删除");
     }
 
     let tx = conn.transaction()?;
@@ -263,6 +314,94 @@ pub fn delete_reminder(path: &str, id: i64) -> anyhow::Result<()> {
 pub fn toggle_reminder(path: &str, id: i64, is_completed: bool) -> anyhow::Result<()> {
     let conn = open_connection(path)?;
     conn.execute("UPDATE reminders SET is_completed=?1 WHERE id=?2", params![is_completed, id])?;
+    Ok(())
+}
+
+pub fn get_plan_tasks(path: &str) -> anyhow::Result<Vec<PlanTask>> {
+    let conn = open_connection(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT id, title, start_date, end_date, main_tag_id, sub_tag_id, notes, is_completed, completed_at
+         FROM plan_tasks
+         ORDER BY is_completed, end_date, start_date, id",
+    )?;
+    let iter = stmt.query_map([], |row| {
+        Ok(PlanTask {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            start_date: row.get(2)?,
+            end_date: row.get(3)?,
+            main_tag_id: row.get(4)?,
+            sub_tag_id: row.get(5)?,
+            notes: row.get(6)?,
+            is_completed: row.get(7)?,
+            completed_at: row.get(8)?,
+        })
+    })?;
+
+    let mut tasks = Vec::new();
+    for task in iter {
+        tasks.push(task?);
+    }
+    Ok(tasks)
+}
+
+pub fn save_plan_task(path: &str, task: PlanTask) -> anyhow::Result<i64> {
+    let conn = open_connection(path)?;
+    if task.id > 0 {
+        conn.execute(
+            "UPDATE plan_tasks
+             SET title=?1, start_date=?2, end_date=?3, main_tag_id=?4, sub_tag_id=?5,
+                 notes=?6, is_completed=?7, completed_at=?8, updated_at=CURRENT_TIMESTAMP
+             WHERE id=?9",
+            params![
+                task.title,
+                task.start_date,
+                task.end_date,
+                task.main_tag_id,
+                task.sub_tag_id,
+                task.notes,
+                task.is_completed,
+                task.completed_at,
+                task.id
+            ],
+        )?;
+        Ok(task.id)
+    } else {
+        conn.execute(
+            "INSERT INTO plan_tasks
+             (title, start_date, end_date, main_tag_id, sub_tag_id, notes, is_completed, completed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                task.title,
+                task.start_date,
+                task.end_date,
+                task.main_tag_id,
+                task.sub_tag_id,
+                task.notes,
+                task.is_completed,
+                task.completed_at
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+}
+
+pub fn delete_plan_task(path: &str, id: i64) -> anyhow::Result<()> {
+    let conn = open_connection(path)?;
+    conn.execute("DELETE FROM plan_tasks WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn toggle_plan_task(path: &str, id: i64, is_completed: bool) -> anyhow::Result<()> {
+    let conn = open_connection(path)?;
+    conn.execute(
+        "UPDATE plan_tasks
+         SET is_completed=?1,
+             completed_at=CASE WHEN ?1 THEN datetime('now', 'localtime') ELSE NULL END,
+             updated_at=CURRENT_TIMESTAMP
+         WHERE id=?2",
+        params![is_completed, id],
+    )?;
     Ok(())
 }
 

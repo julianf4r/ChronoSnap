@@ -35,7 +35,7 @@ const handleDeleteTag = async (id: number) => {
     await loadTags();
     showToast("标签已删除");
   } catch (e: any) {
-    if (e.toString().includes("FOREIGN KEY") || e.toString().includes("正在被事件使用")) {
+    if (e.toString().includes("FOREIGN KEY") || e.toString().includes("正在被事件使用") || e.toString().includes("正在被任务使用")) {
       showToast("该标签正在被使用，无法删除", "error");
     } else {
       showToast("删除失败: " + e, "error");

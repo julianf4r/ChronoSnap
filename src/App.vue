@@ -6,16 +6,16 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow, type Theme as SystemTheme } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { 
-  RefreshCw, Calendar, ChevronLeft, ChevronRight, Play, Pause, SquarePlus, Tag as TagIcon, Download, Settings, X, Image as ImageIcon, BarChart2, Trash2, Bell, AlertTriangle
+  RefreshCw, Calendar, ChevronLeft, ChevronRight, Play, Pause, SquarePlus, Tag as TagIcon, Download, Settings, X, Image as ImageIcon, BarChart2, ChartGantt, Trash2, Bell, AlertTriangle
 } from "lucide-vue-next";
 
 import { 
-  isSetupComplete, savePath, dbPath, isPaused, currentDate, currentLogicalMinute, getLogicDateStr, timelineImages, selectedImage, lockedImage, 
+  isSetupComplete, savePath, dbPath, isPaused, currentDate, todayLogicalDate, currentLogicalMinute, getLogicDateStr, timelineImages, selectedImage, lockedImage,
   previewSrc, dayEvents, reminders, toast, showToast, timelineZoom, theme, viewMode,
   retainDays, captureInterval,
   TIME_OFFSET_MINUTES, TOTAL_MINUTES, getTagColor, getTagName, mainTags, getSubTags,
   logicalMinutesToTime, logicalMinutesFromTime, formatDuration,
-  loadTags, loadEvents, loadReminders, toISODate, refreshBadgeCount,
+  loadTags, loadEvents, loadReminders, loadPlanTasks, toISODate, refreshBadgeCount,
   calendarStatus, loadCalendarStatus, currentCalendarMonthStr
 } from "./store";
 import { DBEvent, TimelineItem, StorageHealth } from "./types";
@@ -23,6 +23,7 @@ import { DBEvent, TimelineItem, StorageHealth } from "./types";
 // --- Components ---
 import Setup from "./components/Setup.vue";
 import Preview from "./components/views/Preview.vue";
+import Plan from "./components/views/Plan.vue";
 import Dashboard from "./components/views/Dashboard.vue";
 import TagManager from "./components/modals/TagManager.vue";
 import ExportModal from "./components/modals/ExportModal.vue";
@@ -105,6 +106,7 @@ const checkReminders = async (currentMin: number) => {
 const updateCurrentMinute = () => {
   const now = new Date();
   const logicalDateStr = new Date(now.getTime() - TIME_OFFSET_MINUTES * 60000).toLocaleDateString('sv');
+  todayLogicalDate.value = logicalDateStr;
   if (logicalDateStr === currentDate.value) {
     const m = now.getHours() * 60 + now.getMinutes();
     const min = (m < TIME_OFFSET_MINUTES ? m + 1440 : m) - TIME_OFFSET_MINUTES;
@@ -241,6 +243,7 @@ const initializeConfiguredStorage = async (autoScroll = false) => {
   await loadTags();
   await loadEvents();
   await loadReminders();
+  await loadPlanTasks();
   await loadTimeline(autoScroll);
   return true;
 };
@@ -471,8 +474,8 @@ const persistTimelineZoom = () => {
   }, 400);
 };
 
-const selectCalendarDate = (date: Date) => {
-  currentDate.value = toISODate(date);
+const selectDate = (date: string) => {
+  currentDate.value = date;
   isCalendarOpen.value = false;
   selectedImage.value = null;
   lockedImage.value = null;
@@ -485,6 +488,10 @@ const selectCalendarDate = (date: Date) => {
   loadTimeline(true);
   loadEvents();
   loadReminders();
+};
+
+const selectCalendarDate = (date: Date) => {
+  selectDate(toISODate(date));
 };
 
 const calendarDays = computed(() => {
@@ -543,7 +550,7 @@ const togglePause = async () => {
                 <span v-if="reminders.some(r => !r.is_completed && (currentDate < getLogicDateStr() || (currentDate === getLogicDateStr() && r.minute < currentLogicalMinute)))" class="absolute top-1.5 right-1.5 w-2 h-2 bg-[#FF3B30] rounded-full border border-bg-sidebar"></span>
                 <span v-else-if="reminders.some(r => !r.is_completed)" class="absolute top-1.5 right-1.5 w-2 h-2 bg-[#007AFF] rounded-full border border-bg-sidebar"></span>
               </button>
-              <button @click="loadTimeline(true); loadEvents(); loadReminders()" class="p-2 hover:bg-bg-card rounded-xl text-text-sec"><RefreshCw :size="18" /></button>
+              <button @click="loadTimeline(true); loadEvents(); loadReminders(); loadPlanTasks()" class="p-2 hover:bg-bg-card rounded-xl text-text-sec"><RefreshCw :size="18" /></button>
             </div>
           </div>
           <div ref="calendarRef" class="relative">
@@ -616,12 +623,13 @@ const togglePause = async () => {
       <div class="flex-1 bg-bg-main flex flex-col relative overflow-hidden">
         <div class="p-6 flex items-center justify-between border-b bg-bg-card/80 backdrop-blur-md z-10">
           <div class="flex items-center gap-3">
-            <span class="text-lg font-bold">{{ viewMode === 'preview' ? (selectedImage ? selectedImage.time : '预览') : '时间分析' }}</span>
+            <span class="text-lg font-bold">{{ viewMode === 'preview' ? (selectedImage ? selectedImage.time : '预览') : (viewMode === 'plan' ? '任务计划' : '时间分析') }}</span>
             <span v-if="viewMode === 'preview' && selectedImage" class="text-xs font-bold px-2 py-0.5 rounded-md" :class="lockedImage?.path === selectedImage.path ? 'bg-[#007AFF] text-white' : 'bg-bg-input text-text-sec'">{{ lockedImage?.path === selectedImage.path ? '已定格' : '预览中' }}</span>
           </div>
           <div class="flex items-center gap-4">
             <div class="flex bg-bg-input rounded-xl p-1 gap-1 border border-border-main/50 shadow-inner">
                <button @click="viewMode = 'preview'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'preview' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><ImageIcon :size="14"/> 预览</button>
+               <button @click="viewMode = 'plan'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'plan' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><ChartGantt :size="14"/> 计划</button>
                <button @click="viewMode = 'dashboard'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'dashboard' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><BarChart2 :size="14"/> 统计</button>
             </div>
           </div>
@@ -629,6 +637,7 @@ const togglePause = async () => {
 
         <div class="flex-1 relative overflow-hidden">
           <Preview v-show="viewMode === 'preview'" />
+          <Plan v-if="viewMode === 'plan'" @select-date="selectDate" />
           <Dashboard v-if="viewMode === 'dashboard'" />
         </div>
       </div>

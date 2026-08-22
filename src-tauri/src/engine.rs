@@ -216,6 +216,51 @@ pub fn get_reminders_by_month(state: tauri::State<'_, AppState>, year_month: Str
 }
 
 #[tauri::command]
+pub fn get_plan_tasks(state: tauri::State<'_, AppState>) -> Result<Vec<crate::db::PlanTask>, String> {
+    let path = state.db_path.lock().unwrap();
+    let path = path.as_ref().ok_or("Database path not set")?;
+    crate::db::get_plan_tasks(path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_plan_task(state: tauri::State<'_, AppState>, mut task: crate::db::PlanTask) -> Result<i64, String> {
+    task.title = task.title.trim().to_string();
+    task.notes = task.notes.trim().to_string();
+    if task.title.is_empty() {
+        return Err("任务名称不能为空".into());
+    }
+
+    let start_date = chrono::NaiveDate::parse_from_str(&task.start_date, "%Y-%m-%d")
+        .map_err(|_| "开始日期格式无效")?;
+    let end_date = chrono::NaiveDate::parse_from_str(&task.end_date, "%Y-%m-%d")
+        .map_err(|_| "结束日期格式无效")?;
+    if end_date < start_date {
+        return Err("结束日期不能早于开始日期".into());
+    }
+    if task.main_tag_id.is_none() {
+        task.sub_tag_id = None;
+    }
+
+    let path = state.db_path.lock().unwrap();
+    let path = path.as_ref().ok_or("Database path not set")?;
+    crate::db::save_plan_task(path, task).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_plan_task(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
+    let path = state.db_path.lock().unwrap();
+    let path = path.as_ref().ok_or("Database path not set")?;
+    crate::db::delete_plan_task(path, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn toggle_plan_task(state: tauri::State<'_, AppState>, id: i64, is_completed: bool) -> Result<(), String> {
+    let path = state.db_path.lock().unwrap();
+    let path = path.as_ref().ok_or("Database path not set")?;
+    crate::db::toggle_plan_task(path, id, is_completed).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn update_interval(state: tauri::State<'_, AppState>, seconds: u64) {
     state.capture_interval_secs.store(seconds.clamp(60, 600), Ordering::SeqCst);
 }

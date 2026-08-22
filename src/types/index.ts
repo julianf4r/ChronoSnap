@@ -23,6 +23,18 @@ export interface Reminder {
   is_completed: boolean;
 }
 
+export interface PlanTask {
+  id: number;
+  title: string;
+  start_date: string;
+  end_date: string;
+  main_tag_id: number | null;
+  sub_tag_id: number | null;
+  notes: string;
+  is_completed: boolean;
+  completed_at: string | null;
+}
+
 export interface TimelineItem {
   time: string;
   path: string;

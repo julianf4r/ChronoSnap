@@ -2,7 +2,7 @@ import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Image } from "@tauri-apps/api/image";
-import { Tag, DBEvent, TimelineItem, Toast, Reminder } from "../types";
+import { Tag, DBEvent, TimelineItem, Toast, Reminder, PlanTask } from "../types";
 
 export const TIME_OFFSET_MINUTES = 180;
 export const TOTAL_MINUTES = 1440;
@@ -41,8 +41,9 @@ export const theme = ref("system");
 // --- Global UI State ---
 export const isPaused = ref(false);
 export const currentDate = ref(getLogicDateStr()); // Initialize with logic date
+export const todayLogicalDate = ref(getLogicDateStr());
 export const currentLogicalMinute = ref(-1); // Exported to keep track of current minute globally
-export const viewMode = ref<'preview' | 'dashboard'>('dashboard');
+export const viewMode = ref<'preview' | 'plan' | 'dashboard'>('plan');
 export const isFullscreen = ref(false);
 export const previewSrc = ref("");
 export const selectedImage = ref<TimelineItem | null>(null);
@@ -52,6 +53,7 @@ export const lockedImage = ref<TimelineItem | null>(null);
 export const tags = ref<Tag[]>([]);
 export const dayEvents = ref<DBEvent[]>([]);
 export const reminders = ref<Reminder[]>([]);
+export const planTasks = ref<PlanTask[]>([]);
 export const calendarStatus = ref<Record<string, { has_overdue: boolean, has_upcoming: boolean }>>({});
 export const timelineImages = ref<TimelineItem[]>([]);
 export const refreshSignal = ref(0); // Counter to trigger dashboard refreshes
@@ -116,6 +118,10 @@ export const loadReminders = async () => {
   reminders.value = await invoke("get_reminders", { date: currentDate.value });
   refreshBadgeCount();
   refreshCalendarStatus(); // 提醒更新时也刷新日历状态
+};
+export const loadPlanTasks = async () => {
+  if (!dbPath.value) return;
+  planTasks.value = await invoke("get_plan_tasks");
 };
 
 export const loadCalendarStatus = async (yearMonth: string) => {

@@ -46,6 +46,10 @@ pub fn run() {
             engine::toggle_reminder,
             engine::get_overdue_reminders_count,
             engine::get_reminders_by_month,
+            engine::get_plan_tasks,
+            engine::save_plan_task,
+            engine::delete_plan_task,
+            engine::toggle_plan_task,
             engine::write_file
         ])
         .setup(|app| {
