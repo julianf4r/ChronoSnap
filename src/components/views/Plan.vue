@@ -262,7 +262,6 @@ const saveTask = async () => {
 };
 
 const deleteTask = async (task: PlanTask) => {
-  if (!window.confirm(`确定删除任务“${task.title}”吗？`)) return;
   try {
     await invoke("delete_plan_task", { id: task.id });
     editingTask.value = null;
