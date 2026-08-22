@@ -431,9 +431,10 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="flex-1 overflow-auto bg-bg-card/30">
-      <div class="min-w-max">
-        <div class="grid sticky top-0 z-30 border-b border-border-main bg-bg-card/95 backdrop-blur-md" :style="{ gridTemplateColumns: gridTemplate }">
+    <div class="flex-1 relative overflow-hidden bg-bg-card/30">
+      <div class="absolute inset-0 overflow-auto">
+        <div class="min-w-max">
+          <div class="grid sticky top-0 z-30 border-b border-border-main bg-bg-card/95 backdrop-blur-md" :style="{ gridTemplateColumns: gridTemplate }">
           <div class="sticky left-0 z-40 h-16 px-5 flex items-center bg-bg-card border-r border-border-main text-[11px] font-black text-text-sec uppercase tracking-wider">
             任务
           </div>
@@ -528,14 +529,16 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else class="h-80 sticky left-0 flex flex-col items-center justify-center text-text-sec" style="width: min(100vw, 900px)">
-          <CalendarDays :size="52" class="opacity-20 mb-4" />
-          <div class="text-sm font-bold mb-1">{{ planTasks.length ? "当前范围内没有符合条件的任务" : "还没有计划任务" }}</div>
-          <div class="text-xs opacity-70 mb-5">从一个有明确起止日期的任务开始</div>
-          <button @click="openNewTask" class="px-4 py-2.5 rounded-xl bg-[#007AFF] text-white text-xs font-bold flex items-center gap-2">
-            <Plus :size="15" /> 新建任务
-          </button>
         </div>
+      </div>
+
+      <div v-if="!visibleTasks.length" class="absolute inset-x-0 top-16 bottom-0 z-20 flex flex-col items-center justify-center text-text-sec pointer-events-none">
+        <CalendarDays :size="52" class="opacity-20 mb-4" />
+        <div class="text-sm font-bold mb-1">{{ planTasks.length ? "当前范围内没有符合条件的任务" : "还没有计划任务" }}</div>
+        <div class="text-xs opacity-70 mb-5">从一个有明确起止日期的任务开始</div>
+        <button @click="openNewTask" class="pointer-events-auto px-4 py-2.5 rounded-xl bg-[#007AFF] text-white text-xs font-bold flex items-center gap-2">
+          <Plus :size="15" /> 新建任务
+        </button>
       </div>
     </div>
 
