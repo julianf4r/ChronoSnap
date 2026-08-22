@@ -461,7 +461,7 @@ onUnmounted(() => {
             class="grid h-18 border-b border-border-main/60 group"
             :style="{ gridTemplateColumns: gridTemplate }"
           >
-            <div class="sticky left-0 z-20 bg-bg-card border-r border-border-main px-4 flex items-center gap-3 min-w-0 group-hover:bg-bg-input/35">
+            <div class="sticky left-0 z-20 bg-bg-card border-r border-border-main px-4 flex items-center gap-3 min-w-0 group-hover:bg-bg-input/35" style="grid-column: 1; grid-row: 1">
               <button
                 @click.stop="toggleTask(task)"
                 class="w-6 h-6 rounded-full shrink-0 flex items-center justify-center transition-all"
@@ -486,9 +486,10 @@ onUnmounted(() => {
             </div>
 
             <div
-              v-for="date in rangeDays"
+              v-for="(date, dateIndex) in rangeDays"
               :key="`${task.id}-${date}`"
               class="border-r border-border-main/40 relative"
+              :style="{ gridColumn: dateIndex + 2, gridRow: 1 }"
               :class="[
                 isWeekend(date) ? 'bg-bg-input/25' : '',
                 date === currentDate ? 'bg-[#007AFF]/6' : '',
