@@ -442,15 +442,16 @@ onUnmounted(() => {
             :key="date"
             @click="emit('selectDate', date)"
             class="h-16 border-r border-border-main/60 flex flex-col items-center justify-center transition-colors relative"
-            :class="[
-              isWeekend(date) ? 'bg-bg-input/35' : '',
-              date === currentDate ? 'bg-[#007AFF]/10 text-[#007AFF]' : 'hover:bg-bg-input/60',
-              date === logicalToday ? 'border-l-2 border-l-[#FF3B30]' : '',
-            ]"
+            :class="date === logicalToday
+              ? 'bg-[#FF3B30]/10 text-[#FF3B30]'
+              : date === currentDate
+                ? 'bg-[#007AFF]/10 text-[#007AFF]'
+                : isWeekend(date)
+                  ? 'bg-bg-input/35 hover:bg-bg-input/60'
+                  : 'hover:bg-bg-input/60'"
           >
             <span class="text-[10px] font-bold opacity-65 mb-1">周{{ weekdayName(date) }}</span>
             <span class="text-xs font-black">{{ formatDay(date) }}</span>
-            <span v-if="date === logicalToday" class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#FF3B30]"></span>
           </button>
         </div>
 
@@ -490,11 +491,13 @@ onUnmounted(() => {
               :key="`${task.id}-${date}`"
               class="border-r border-border-main/40 relative"
               :style="{ gridColumn: dateIndex + 2, gridRow: 1 }"
-              :class="[
-                isWeekend(date) ? 'bg-bg-input/25' : '',
-                date === currentDate ? 'bg-[#007AFF]/6' : '',
-                date === logicalToday ? 'border-l-2 border-l-[#FF3B30]/80' : '',
-              ]"
+              :class="date === logicalToday
+                ? 'bg-[#FF3B30]/8'
+                : date === currentDate
+                  ? 'bg-[#007AFF]/6'
+                  : isWeekend(date)
+                    ? 'bg-bg-input/25'
+                    : ''"
             ></div>
 
             <button
