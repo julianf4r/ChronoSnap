@@ -38,6 +38,8 @@ const emit = defineEmits<{ selectDate: [date: string] }>();
 const DAY_WIDTH = 68;
 const DAYS_BEFORE = 7;
 const DAYS_AFTER = 14;
+const UNTAGGED_TASK_COLOR = "#64748B";
+const OVERDUE_TASK_COLOR = "#C2415C";
 
 const onlyFocusDate = ref(false);
 const hideCompleted = ref(true);
@@ -300,7 +302,11 @@ const getBarPlacement = (task: PlanTask) => {
 const taskBarStyle = (task: PlanTask) => ({
   ...getBarPlacement(task),
   gridRow: "1",
-  backgroundColor: isOverdue(task) ? "#FF3B30" : getTagColor(task.main_tag_id),
+  backgroundColor: isOverdue(task)
+    ? OVERDUE_TASK_COLOR
+    : task.main_tag_id
+      ? getTagColor(task.main_tag_id)
+      : UNTAGGED_TASK_COLOR,
 });
 
 type DragMode = "move" | "start" | "end";
@@ -546,7 +552,7 @@ onUnmounted(() => {
 
             <div
               v-else-if="isOverdue(task)"
-              class="z-10 self-center h-9 mx-1 px-3 rounded-xl bg-[#FF3B30]/12 border border-[#FF3B30]/25 text-[#FF3B30] flex items-center gap-2"
+              class="z-10 self-center h-9 mx-1 px-3 rounded-xl bg-[#C2415C]/12 border border-[#C2415C]/25 text-[#C2415C] flex items-center gap-2"
               style="grid-column: 2 / span 3; grid-row: 1"
             >
               <Clock3 :size="13" />
