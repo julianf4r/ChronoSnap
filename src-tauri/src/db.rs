@@ -46,6 +46,7 @@ pub struct PlanTask {
     pub notes: String,
     pub is_completed: bool,
     pub completed_at: Option<String>,
+    pub sort_order: i64,
 }
 
 pub fn init_db(path: &str) -> anyhow::Result<()> {
@@ -104,11 +105,37 @@ pub fn init_db(path: &str) -> anyhow::Result<()> {
             notes TEXT NOT NULL DEFAULT '',
             is_completed BOOLEAN NOT NULL DEFAULT 0,
             completed_at TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(main_tag_id) REFERENCES tags(id),
             FOREIGN KEY(sub_tag_id) REFERENCES tags(id)
         )",
+        [],
+    )?;
+
+    let has_plan_task_sort_order = {
+        let mut stmt = conn.prepare("PRAGMA table_info(plan_tasks)")?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        let mut found = false;
+        for column in columns {
+            if column? == "sort_order" {
+                found = true;
+                break;
+            }
+        }
+        found
+    };
+
+    if !has_plan_task_sort_order {
+        conn.execute(
+            "ALTER TABLE plan_tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+
+    conn.execute(
+        "UPDATE plan_tasks SET sort_order = id WHERE sort_order = 0",
         [],
     )?;
 
@@ -119,6 +146,11 @@ pub fn init_db(path: &str) -> anyhow::Result<()> {
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_plan_tasks_dates ON plan_tasks(start_date, end_date)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_plan_tasks_sort_order ON plan_tasks(sort_order, id)",
         [],
     )?;
 
@@ -320,9 +352,9 @@ pub fn toggle_reminder(path: &str, id: i64, is_completed: bool) -> anyhow::Resul
 pub fn get_plan_tasks(path: &str) -> anyhow::Result<Vec<PlanTask>> {
     let conn = open_connection(path)?;
     let mut stmt = conn.prepare(
-        "SELECT id, title, start_date, end_date, main_tag_id, sub_tag_id, notes, is_completed, completed_at
+        "SELECT id, title, start_date, end_date, main_tag_id, sub_tag_id, notes, is_completed, completed_at, sort_order
          FROM plan_tasks
-         ORDER BY is_completed, end_date, start_date, id",
+         ORDER BY sort_order, id",
     )?;
     let iter = stmt.query_map([], |row| {
         Ok(PlanTask {
@@ -335,6 +367,7 @@ pub fn get_plan_tasks(path: &str) -> anyhow::Result<Vec<PlanTask>> {
             notes: row.get(6)?,
             is_completed: row.get(7)?,
             completed_at: row.get(8)?,
+            sort_order: row.get(9)?,
         })
     })?;
 
@@ -367,10 +400,15 @@ pub fn save_plan_task(path: &str, task: PlanTask) -> anyhow::Result<i64> {
         )?;
         Ok(task.id)
     } else {
+        let next_sort_order: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM plan_tasks",
+            [],
+            |row| row.get(0),
+        )?;
         conn.execute(
             "INSERT INTO plan_tasks
-             (title, start_date, end_date, main_tag_id, sub_tag_id, notes, is_completed, completed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             (title, start_date, end_date, main_tag_id, sub_tag_id, notes, is_completed, completed_at, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 task.title,
                 task.start_date,
@@ -379,11 +417,42 @@ pub fn save_plan_task(path: &str, task: PlanTask) -> anyhow::Result<i64> {
                 task.sub_tag_id,
                 task.notes,
                 task.is_completed,
-                task.completed_at
+                task.completed_at,
+                next_sort_order
             ],
         )?;
         Ok(conn.last_insert_rowid())
     }
+}
+
+pub fn swap_plan_tasks(path: &str, first_id: i64, second_id: i64) -> anyhow::Result<()> {
+    if first_id == second_id {
+        return Ok(());
+    }
+
+    let mut conn = open_connection(path)?;
+    let tx = conn.transaction()?;
+    let first_order: i64 = tx.query_row(
+        "SELECT sort_order FROM plan_tasks WHERE id = ?1",
+        params![first_id],
+        |row| row.get(0),
+    )?;
+    let second_order: i64 = tx.query_row(
+        "SELECT sort_order FROM plan_tasks WHERE id = ?1",
+        params![second_id],
+        |row| row.get(0),
+    )?;
+
+    tx.execute(
+        "UPDATE plan_tasks SET sort_order = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        params![second_order, first_id],
+    )?;
+    tx.execute(
+        "UPDATE plan_tasks SET sort_order = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        params![first_order, second_id],
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn delete_plan_task(path: &str, id: i64) -> anyhow::Result<()> {

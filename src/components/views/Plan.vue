@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ArrowDown,
+  ArrowUp,
   Calendar,
   CalendarDays,
   Check,
@@ -41,6 +43,7 @@ const onlyFocusDate = ref(false);
 const hideCompleted = ref(true);
 const editingTask = ref<PlanTask | null>(null);
 const suppressTaskClick = ref<number | null>(null);
+const isReordering = ref(false);
 const startCalendarRef = ref<HTMLElement | null>(null);
 const endCalendarRef = ref<HTMLElement | null>(null);
 const mainTagSelectRef = ref<HTMLElement | null>(null);
@@ -90,13 +93,6 @@ const taskStatusClass = (task: PlanTask) => {
   return "text-text-sec bg-bg-input";
 };
 
-const statusOrder = (task: PlanTask) => {
-  if (isOverdue(task)) return 0;
-  if (!task.is_completed && isActiveOn(task, logicalToday.value)) return 1;
-  if (!task.is_completed) return 2;
-  return 3;
-};
-
 const visibleTasks = computed(() => {
   return planTasks.value
     .filter(task => !hideCompleted.value || !task.is_completed)
@@ -106,14 +102,7 @@ const visibleTasks = computed(() => {
       }
       const intersectsRange = task.start_date <= rangeEnd.value && task.end_date >= rangeStart.value;
       return intersectsRange || isOverdue(task);
-    })
-    .slice()
-    .sort((a, b) =>
-      statusOrder(a) - statusOrder(b) ||
-      a.end_date.localeCompare(b.end_date) ||
-      a.start_date.localeCompare(b.start_date) ||
-      a.id - b.id,
-    );
+    });
 });
 
 const summary = computed(() => ({
@@ -133,6 +122,7 @@ const createTaskDraft = (): PlanTask => ({
   notes: "",
   is_completed: false,
   completed_at: null,
+  sort_order: 0,
 });
 
 const closeTaskPickers = () => {
@@ -279,6 +269,22 @@ const toggleTask = async (task: PlanTask) => {
     showToast(task.is_completed ? "任务已恢复" : "任务已完成");
   } catch (error) {
     showToast("更新失败: " + error, "error");
+  }
+};
+
+const moveTask = async (taskIndex: number, direction: -1 | 1) => {
+  const task = visibleTasks.value[taskIndex];
+  const targetTask = visibleTasks.value[taskIndex + direction];
+  if (!task || !targetTask || isReordering.value) return;
+
+  isReordering.value = true;
+  try {
+    await invoke("swap_plan_tasks", { firstId: task.id, secondId: targetTask.id });
+    await loadPlanTasks();
+  } catch (error) {
+    showToast("调整顺序失败: " + error, "error");
+  } finally {
+    isReordering.value = false;
   }
 };
 
@@ -457,7 +463,7 @@ onUnmounted(() => {
 
         <div v-if="visibleTasks.length">
           <div
-            v-for="task in visibleTasks"
+            v-for="(task, taskIndex) in visibleTasks"
             :key="task.id"
             class="grid h-18 border-b border-border-main/60 group"
             :style="{ gridTemplateColumns: gridTemplate }"
@@ -484,6 +490,24 @@ onUnmounted(() => {
                   <span v-else class="text-[10px] font-bold text-text-sec">无标签</span>
                 </div>
               </button>
+              <div class="shrink-0 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <button
+                  @click.stop="moveTask(taskIndex, -1)"
+                  :disabled="taskIndex === 0 || isReordering"
+                  class="w-6 h-6 rounded-lg flex items-center justify-center text-text-sec hover:text-[#007AFF] hover:bg-[#007AFF]/10 disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-text-sec"
+                  title="上移"
+                >
+                  <ArrowUp :size="13" />
+                </button>
+                <button
+                  @click.stop="moveTask(taskIndex, 1)"
+                  :disabled="taskIndex === visibleTasks.length - 1 || isReordering"
+                  class="w-6 h-6 rounded-lg flex items-center justify-center text-text-sec hover:text-[#007AFF] hover:bg-[#007AFF]/10 disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-text-sec"
+                  title="下移"
+                >
+                  <ArrowDown :size="13" />
+                </button>
+              </div>
             </div>
 
             <div

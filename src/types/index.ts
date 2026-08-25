@@ -33,6 +33,7 @@ export interface PlanTask {
   notes: string;
   is_completed: boolean;
   completed_at: string | null;
+  sort_order: number;
 }
 
 export interface TimelineItem {

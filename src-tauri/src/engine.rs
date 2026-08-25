@@ -261,6 +261,13 @@ pub fn toggle_plan_task(state: tauri::State<'_, AppState>, id: i64, is_completed
 }
 
 #[tauri::command]
+pub fn swap_plan_tasks(state: tauri::State<'_, AppState>, first_id: i64, second_id: i64) -> Result<(), String> {
+    let path = state.db_path.lock().unwrap();
+    let path = path.as_ref().ok_or("Database path not set")?;
+    crate::db::swap_plan_tasks(path, first_id, second_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn update_interval(state: tauri::State<'_, AppState>, seconds: u64) {
     state.capture_interval_secs.store(seconds.clamp(60, 600), Ordering::SeqCst);
 }
