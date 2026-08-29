@@ -76,7 +76,7 @@ const rangeEnd = computed(() => addDays(currentDate.value, DAYS_AFTER));
 const rangeDays = computed(() =>
   Array.from({ length: DAYS_BEFORE + DAYS_AFTER + 1 }, (_, index) => addDays(rangeStart.value, index)),
 );
-const gridTemplate = computed(() => `260px repeat(${rangeDays.value.length}, ${DAY_WIDTH}px)`);
+const gridTemplate = computed(() => `280px repeat(${rangeDays.value.length}, ${DAY_WIDTH}px)`);
 const focusIsToday = computed(() => currentDate.value === logicalToday.value);
 
 const isActiveOn = (task: PlanTask, date: string) => task.start_date <= date && task.end_date >= date;
