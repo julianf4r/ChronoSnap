@@ -261,10 +261,10 @@ pub fn toggle_plan_task(state: tauri::State<'_, AppState>, id: i64, is_completed
 }
 
 #[tauri::command]
-pub fn swap_plan_tasks(state: tauri::State<'_, AppState>, first_id: i64, second_id: i64) -> Result<(), String> {
+pub fn reorder_plan_tasks(state: tauri::State<'_, AppState>, task_ids: Vec<i64>) -> Result<(), String> {
     let path = state.db_path.lock().unwrap();
     let path = path.as_ref().ok_or("Database path not set")?;
-    crate::db::swap_plan_tasks(path, first_id, second_id).map_err(|e| e.to_string())
+    crate::db::reorder_plan_tasks(path, &task_ids).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -2,8 +2,6 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  ArrowDown,
-  ArrowUp,
   Calendar,
   CalendarDays,
   Check,
@@ -12,6 +10,7 @@ import {
   ChevronRight,
   Clock3,
   EyeOff,
+  GripVertical,
   ListFilter,
   Plus,
   RotateCcw,
@@ -38,6 +37,7 @@ const emit = defineEmits<{ selectDate: [date: string] }>();
 const DAY_WIDTH = 68;
 const DAYS_BEFORE = 7;
 const DAYS_AFTER = 14;
+const TASK_ROW_HEIGHT = 72;
 const UNTAGGED_TASK_COLOR = "#64748B";
 
 const onlyFocusDate = ref(false);
@@ -45,6 +45,9 @@ const hideCompleted = ref(true);
 const editingTask = ref<PlanTask | null>(null);
 const suppressTaskClick = ref<number | null>(null);
 const isReordering = ref(false);
+const draggingTaskId = ref<number | null>(null);
+const taskOrderDragOffset = ref(0);
+const isTaskOrderDropping = ref(false);
 const startCalendarRef = ref<HTMLElement | null>(null);
 const endCalendarRef = ref<HTMLElement | null>(null);
 const mainTagSelectRef = ref<HTMLElement | null>(null);
@@ -105,7 +108,6 @@ const visibleTasks = computed(() => {
       return intersectsRange || isOverdue(task);
     });
 });
-
 const summary = computed(() => ({
   active: planTasks.value.filter(task => !task.is_completed && isActiveOn(task, logicalToday.value)).length,
   overdue: planTasks.value.filter(isOverdue).length,
@@ -273,21 +275,126 @@ const toggleTask = async (task: PlanTask) => {
   }
 };
 
-const moveTask = async (taskIndex: number, direction: -1 | 1) => {
-  const task = visibleTasks.value[taskIndex];
-  const targetTask = visibleTasks.value[taskIndex + direction];
-  if (!task || !targetTask || isReordering.value) return;
+let taskOrderDragStartY = 0;
+let taskOrderOriginalIndex = -1;
+let taskOrderTargetIndex = -1;
+let taskOrderBaseTasks: PlanTask[] = [];
 
+const getTaskRowStyle = (task: PlanTask, taskIndex: number) => {
+  const style: Record<string, string> = { gridTemplateColumns: gridTemplate.value };
+  if (draggingTaskId.value === null) return style;
+
+  if (draggingTaskId.value === task.id) {
+    style.transform = `translateY(${taskOrderDragOffset.value}px)`;
+    style.zIndex = "25";
+    style.boxShadow = "0 14px 32px rgba(0, 0, 0, 0.16)";
+    style.transition = isTaskOrderDropping.value
+      ? "transform 160ms cubic-bezier(0.22, 1, 0.36, 1)"
+      : "none";
+    return style;
+  }
+
+  if (
+    taskOrderTargetIndex > taskOrderOriginalIndex &&
+    taskIndex > taskOrderOriginalIndex &&
+    taskIndex <= taskOrderTargetIndex
+  ) {
+    style.transform = `translateY(-${TASK_ROW_HEIGHT}px)`;
+  } else if (
+    taskOrderTargetIndex < taskOrderOriginalIndex &&
+    taskIndex >= taskOrderTargetIndex &&
+    taskIndex < taskOrderOriginalIndex
+  ) {
+    style.transform = `translateY(${TASK_ROW_HEIGHT}px)`;
+  }
+  style.transition = "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)";
+  return style;
+};
+
+const removeTaskOrderDragListeners = () => {
+  window.removeEventListener("pointermove", handleTaskOrderDrag);
+  window.removeEventListener("pointerup", finishTaskOrderDrag);
+  window.removeEventListener("pointercancel", cancelTaskOrderDrag);
+  document.body.style.userSelect = "";
+  document.body.style.cursor = "";
+};
+
+const resetTaskOrderDrag = () => {
+  draggingTaskId.value = null;
+  taskOrderDragOffset.value = 0;
+  isTaskOrderDropping.value = false;
+  taskOrderBaseTasks = [];
+  taskOrderOriginalIndex = -1;
+  taskOrderTargetIndex = -1;
+};
+
+const startTaskOrderDrag = (event: PointerEvent, task: PlanTask, taskIndex: number) => {
+  if (isReordering.value || visibleTasks.value.length < 2) return;
+  event.preventDefault();
+  taskOrderBaseTasks = [...visibleTasks.value];
+  draggingTaskId.value = task.id;
+  taskOrderDragStartY = event.clientY;
+  taskOrderOriginalIndex = taskIndex;
+  taskOrderTargetIndex = taskIndex;
+  taskOrderDragOffset.value = 0;
+  isTaskOrderDropping.value = false;
+  document.body.style.userSelect = "none";
+  document.body.style.cursor = "grabbing";
+  window.addEventListener("pointermove", handleTaskOrderDrag);
+  window.addEventListener("pointerup", finishTaskOrderDrag);
+  window.addEventListener("pointercancel", cancelTaskOrderDrag);
+};
+
+function handleTaskOrderDrag(event: PointerEvent) {
+  if (draggingTaskId.value === null) return;
+  taskOrderDragOffset.value = event.clientY - taskOrderDragStartY;
+  const offsetRows = Math.round(taskOrderDragOffset.value / TASK_ROW_HEIGHT);
+  const nextIndex = Math.min(
+    Math.max(taskOrderOriginalIndex + offsetRows, 0),
+    taskOrderBaseTasks.length - 1,
+  );
+  if (nextIndex === taskOrderTargetIndex) return;
+  taskOrderTargetIndex = nextIndex;
+}
+
+function cancelTaskOrderDrag() {
+  removeTaskOrderDragListeners();
+  resetTaskOrderDrag();
+}
+
+async function finishTaskOrderDrag() {
+  removeTaskOrderDragListeners();
+  if (taskOrderTargetIndex === taskOrderOriginalIndex) {
+    resetTaskOrderDrag();
+    return;
+  }
+
+  const reorderedVisibleTasks = [...taskOrderBaseTasks];
+  const [draggedTask] = reorderedVisibleTasks.splice(taskOrderOriginalIndex, 1);
+  reorderedVisibleTasks.splice(taskOrderTargetIndex, 0, draggedTask);
+  const visibleTaskIds = new Set(taskOrderBaseTasks.map(task => task.id));
+  let visibleIndex = 0;
+  const orderedTaskIds = planTasks.value.map(task =>
+    visibleTaskIds.has(task.id) ? reorderedVisibleTasks[visibleIndex++].id : task.id,
+  );
+
+  isTaskOrderDropping.value = true;
+  taskOrderDragOffset.value = (taskOrderTargetIndex - taskOrderOriginalIndex) * TASK_ROW_HEIGHT;
   isReordering.value = true;
   try {
-    await invoke("swap_plan_tasks", { firstId: task.id, secondId: targetTask.id });
+    await Promise.all([
+      invoke("reorder_plan_tasks", { taskIds: orderedTaskIds }),
+      new Promise(resolve => window.setTimeout(resolve, 160)),
+    ]);
     await loadPlanTasks();
   } catch (error) {
+    await loadPlanTasks();
     showToast("调整顺序失败: " + error, "error");
   } finally {
     isReordering.value = false;
+    resetTaskOrderDrag();
   }
-};
+}
 
 const getBarPlacement = (task: PlanTask) => {
   if (task.end_date < rangeStart.value || task.start_date > rangeEnd.value) return null;
@@ -388,6 +495,8 @@ onMounted(() => {
   window.addEventListener("mousedown", handleTaskEditorClickOutside);
 });
 onUnmounted(() => {
+  removeTaskOrderDragListeners();
+  resetTaskOrderDrag();
   window.removeEventListener("mousemove", handleTaskDrag);
   window.removeEventListener("mouseup", finishTaskDrag);
   window.removeEventListener("mousedown", handleTaskEditorClickOutside);
@@ -466,10 +575,19 @@ onUnmounted(() => {
           <div
             v-for="(task, taskIndex) in visibleTasks"
             :key="task.id"
-            class="grid h-18 border-b border-border-main/60 group"
-            :style="{ gridTemplateColumns: gridTemplate }"
+            class="grid h-18 border-b border-border-main/60 group relative transition-[box-shadow,opacity] duration-150"
+            :class="draggingTaskId === task.id ? 'opacity-95' : ''"
+            :style="getTaskRowStyle(task, taskIndex)"
           >
             <div class="sticky left-0 z-20 bg-bg-card border-r border-border-main px-4 flex items-center gap-3 min-w-0 group-hover:bg-bg-input/35" style="grid-column: 1; grid-row: 1">
+              <button
+                @pointerdown.stop="startTaskOrderDrag($event, task, taskIndex)"
+                :disabled="isReordering || visibleTasks.length < 2"
+                class="w-5 h-9 -ml-1 shrink-0 rounded-lg flex items-center justify-center text-text-sec opacity-35 group-hover:opacity-100 hover:text-[#007AFF] hover:bg-[#007AFF]/10 cursor-grab active:cursor-grabbing touch-none disabled:cursor-default disabled:opacity-15 transition-[opacity,color,background-color]"
+                title="拖动调整顺序"
+              >
+                <GripVertical :size="15" />
+              </button>
               <button
                 @click.stop="toggleTask(task)"
                 class="w-6 h-6 rounded-full shrink-0 flex items-center justify-center transition-all"
@@ -491,24 +609,6 @@ onUnmounted(() => {
                   <span v-else class="text-[10px] font-bold text-text-sec">无标签</span>
                 </div>
               </button>
-              <div class="shrink-0 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                <button
-                  @click.stop="moveTask(taskIndex, -1)"
-                  :disabled="taskIndex === 0 || isReordering"
-                  class="w-6 h-6 rounded-lg flex items-center justify-center text-text-sec hover:text-[#007AFF] hover:bg-[#007AFF]/10 disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-text-sec"
-                  title="上移"
-                >
-                  <ArrowUp :size="13" />
-                </button>
-                <button
-                  @click.stop="moveTask(taskIndex, 1)"
-                  :disabled="taskIndex === visibleTasks.length - 1 || isReordering"
-                  class="w-6 h-6 rounded-lg flex items-center justify-center text-text-sec hover:text-[#007AFF] hover:bg-[#007AFF]/10 disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-text-sec"
-                  title="下移"
-                >
-                  <ArrowDown :size="13" />
-                </button>
-              </div>
             </div>
 
             <div

@@ -50,7 +50,7 @@ pub fn run() {
             engine::save_plan_task,
             engine::delete_plan_task,
             engine::toggle_plan_task,
-            engine::swap_plan_tasks,
+            engine::reorder_plan_tasks,
             engine::write_file
         ])
         .setup(|app| {

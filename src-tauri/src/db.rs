@@ -425,32 +425,31 @@ pub fn save_plan_task(path: &str, task: PlanTask) -> anyhow::Result<i64> {
     }
 }
 
-pub fn swap_plan_tasks(path: &str, first_id: i64, second_id: i64) -> anyhow::Result<()> {
-    if first_id == second_id {
-        return Ok(());
-    }
-
+pub fn reorder_plan_tasks(path: &str, task_ids: &[i64]) -> anyhow::Result<()> {
     let mut conn = open_connection(path)?;
     let tx = conn.transaction()?;
-    let first_order: i64 = tx.query_row(
-        "SELECT sort_order FROM plan_tasks WHERE id = ?1",
-        params![first_id],
-        |row| row.get(0),
-    )?;
-    let second_order: i64 = tx.query_row(
-        "SELECT sort_order FROM plan_tasks WHERE id = ?1",
-        params![second_id],
-        |row| row.get(0),
-    )?;
+    let mut existing_ids = {
+        let mut stmt = tx.prepare("SELECT id FROM plan_tasks ORDER BY id")?;
+        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row?);
+        }
+        ids
+    };
+    let mut provided_ids = task_ids.to_vec();
+    existing_ids.sort_unstable();
+    provided_ids.sort_unstable();
+    if existing_ids != provided_ids {
+        anyhow::bail!("任务顺序数据与当前任务不一致");
+    }
 
-    tx.execute(
-        "UPDATE plan_tasks SET sort_order = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
-        params![second_order, first_id],
-    )?;
-    tx.execute(
-        "UPDATE plan_tasks SET sort_order = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
-        params![first_order, second_id],
-    )?;
+    for (index, id) in task_ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE plan_tasks SET sort_order = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+            params![index as i64 + 1, id],
+        )?;
+    }
     tx.commit()?;
     Ok(())
 }
