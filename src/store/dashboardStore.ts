@@ -16,13 +16,33 @@ export const customEndDate = ref(currentDate.value);
 
 export const isStartCalendarOpen = ref(false);
 export const isEndCalendarOpen = ref(false);
-export const dashboardEvents = ref<DBEvent[]>([]);
+const rangeEvents = ref<DBEvent[]>([]);
+export const excludedDates = ref<string[]>([]);
+export const dashboardEvents = computed(() => {
+  const excluded = new Set(excludedDates.value);
+  return rangeEvents.value.filter(event => !excluded.has(event.date));
+});
+export const dashboardRangeDays = computed(() => {
+  const start = Date.parse(dashboardStartDate.value);
+  const end = Date.parse(dashboardEndDate.value);
+  return Math.max(0, Math.floor((end - start) / 86400000) + 1);
+});
+export const activeExcludedDates = computed(() => excludedDates.value.filter(
+  date => date >= dashboardStartDate.value && date <= dashboardEndDate.value
+));
 export const dailyAverageMode = ref<'natural' | 'recorded'>('natural');
 
+let dashboardRequestId = 0;
 export const loadDashboardEvents = async () => {
   if (!dbPath.value) return; // Wait until DB path is initialized
-  dashboardEvents.value = await invoke("get_events_range", { startDate: dashboardStartDate.value, endDate: dashboardEndDate.value });
+  const requestId = ++dashboardRequestId;
+  const events = await invoke<DBEvent[]>("get_events_range", { startDate: dashboardStartDate.value, endDate: dashboardEndDate.value });
+  if (requestId === dashboardRequestId) rangeEvents.value = events;
 };
+
+watch([dashboardRange, dashboardStartDate, dashboardEndDate], () => {
+  excludedDates.value = [];
+}, { flush: 'sync' });
 
 watch([dashboardRange, currentDate], () => {
   if (dashboardRange.value === 'custom') {
@@ -101,10 +121,8 @@ export const dashboardStats = computed(() => {
     }
   });
 
-  const start = new Date(dashboardStartDate.value);
-  const end = new Date(dashboardEndDate.value);
-  const naturalDays = Math.max(1, Math.floor((end.getTime() - start.getTime()) / 86400000) + 1);
-  const recordedDays = Math.max(1, uniqueDays.size);
+  const naturalDays = Math.max(0, dashboardRangeDays.value - activeExcludedDates.value.length);
+  const recordedDays = uniqueDays.size;
   const daysCount = dailyAverageMode.value === 'natural' ? naturalDays : recordedDays;
 
   const mainTagsList = Array.from(mainTagMap.entries()).map(([id, stat]) => {
@@ -117,7 +135,7 @@ export const dashboardStats = computed(() => {
     return {
       id,
       total: stat.total,
-      dailyAverage: stat.total / daysCount,
+      dailyAverage: daysCount > 0 ? stat.total / daysCount : 0,
       percentage: totalMinutes > 0 ? (stat.total / totalMinutes) * 100 : 0,
       subTags: subTagsList
     };
@@ -132,7 +150,7 @@ export const dashboardStats = computed(() => {
 
   return {
     totalMinutes,
-    dailyAverage: totalMinutes / daysCount,
+    dailyAverage: daysCount > 0 ? totalMinutes / daysCount : 0,
     mainTags: mainTagsList,
     naturalDays,
     recordedDays,

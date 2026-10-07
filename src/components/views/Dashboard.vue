@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { BarChart2, Calendar, ChevronLeft, ChevronRight, X } from "lucide-vue-next";
 import { 
   dashboardStats, dashboardRange, dailyAverageMode,
   customStartDate, customEndDate, dashboardStartDate, dashboardEndDate,
   isStartCalendarOpen, isEndCalendarOpen,
-  formatMinutes, getTagColor, getTagName, dashboardEvents
+  formatMinutes, getTagColor, getTagName, dashboardEvents,
+  excludedDates, activeExcludedDates, dashboardRangeDays
 } from "../../store/dashboardStore";
-import { toISODate } from "../../store";
+import { toISODate, parseISODate } from "../../store";
 import { logicalMinutesToTime } from "../../store";
 import type { DBEvent } from "../../types";
 
@@ -16,6 +17,76 @@ const endCalendarRef = ref<HTMLElement | null>(null);
 
 const startCalendarMonth = ref(new Date(customStartDate.value));
 const endCalendarMonth = ref(new Date(customEndDate.value));
+
+const isExclusionCalendarOpen = ref(false);
+const exclusionCalendarMonth = ref(parseISODate(dashboardStartDate.value));
+const draftExcludedDates = ref<string[]>([]);
+const exclusionDialogRef = ref<HTMLElement | null>(null);
+let exclusionTrigger: HTMLElement | null = null;
+const draftExcludedSet = computed(() => new Set(draftExcludedDates.value));
+const draftIncludedDays = computed(() => Math.max(0, dashboardRangeDays.value - draftExcludedDates.value.length));
+const isDateInRange = (date: Date) => {
+  const value = toISODate(date);
+  return value >= dashboardStartDate.value && value <= dashboardEndDate.value;
+};
+const canChangeExclusionMonth = (offset: number) => {
+  const month = exclusionCalendarMonth.value;
+  const target = new Date(month.getFullYear(), month.getMonth() + offset, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0);
+  return toISODate(target) <= dashboardEndDate.value && toISODate(lastDay) >= dashboardStartDate.value;
+};
+const changeExclusionMonth = (offset: number) => {
+  if (!canChangeExclusionMonth(offset)) return;
+  const month = exclusionCalendarMonth.value;
+  exclusionCalendarMonth.value = new Date(month.getFullYear(), month.getMonth() + offset, 1);
+};
+const openExclusionCalendar = async (event: MouseEvent) => {
+  exclusionTrigger = event.currentTarget as HTMLElement;
+  draftExcludedDates.value = [...activeExcludedDates.value];
+  exclusionCalendarMonth.value = parseISODate(dashboardStartDate.value);
+  isStartCalendarOpen.value = false;
+  isEndCalendarOpen.value = false;
+  isExclusionCalendarOpen.value = true;
+  await nextTick();
+  exclusionDialogRef.value?.focus();
+};
+const closeExclusionCalendar = () => {
+  isExclusionCalendarOpen.value = false;
+  exclusionTrigger?.focus();
+};
+const toggleExcludedDate = (date: Date) => {
+  if (!isDateInRange(date)) return;
+  const value = toISODate(date);
+  draftExcludedDates.value = draftExcludedSet.value.has(value)
+    ? draftExcludedDates.value.filter(day => day !== value)
+    : [...draftExcludedDates.value, value].sort();
+};
+const applyExcludedDates = () => {
+  excludedDates.value = [...draftExcludedDates.value];
+  closeExclusionCalendar();
+};
+const handleExclusionKeydown = (event: KeyboardEvent) => {
+  if (!isExclusionCalendarOpen.value) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeExclusionCalendar();
+  } else if (event.key === 'Tab') {
+    const elements = exclusionDialogRef.value?.querySelectorAll<HTMLElement>('button:not(:disabled)');
+    if (!elements?.length) return;
+    const first = elements[0];
+    const last = elements[elements.length - 1];
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === exclusionDialogRef.value)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+};
+watch([dashboardRange, dashboardStartDate, dashboardEndDate], () => {
+  if (isExclusionCalendarOpen.value) closeExclusionCalendar();
+});
 
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement;
@@ -29,10 +100,12 @@ const handleClickOutside = (event: MouseEvent) => {
 
 onMounted(() => {
   window.addEventListener('mousedown', handleClickOutside);
+  window.addEventListener('keydown', handleExclusionKeydown);
 });
 
 onUnmounted(() => {
   window.removeEventListener('mousedown', handleClickOutside);
+  window.removeEventListener('keydown', handleExclusionKeydown);
 });
 
 const getCalendarDays = (month: Date) => {
@@ -49,6 +122,7 @@ const getCalendarDays = (month: Date) => {
 
 const startCalendarDays = computed(() => getCalendarDays(startCalendarMonth.value));
 const endCalendarDays = computed(() => getCalendarDays(endCalendarMonth.value));
+const exclusionCalendarDays = computed(() => getCalendarDays(exclusionCalendarMonth.value));
 
 const selectedSubTag = ref<{ mainTagId: number; subTagId: number } | null>(null);
 
@@ -85,7 +159,7 @@ const selectedSubTagDailyGroups = computed(() => {
     <div class="max-w-3xl mx-auto">
       <!-- Top Filters -->
       <div class="flex flex-col gap-6 mb-10">
-        <div class="flex justify-between items-center">
+        <div class="flex flex-wrap justify-between items-center gap-3">
            <div class="flex bg-bg-input rounded-xl p-1.5 gap-1 border border-border-main/50 shadow-inner">
               <button @click="dashboardRange = 'today'" class="px-5 py-2 text-xs font-bold rounded-lg transition-all" :class="dashboardRange === 'today' ? 'bg-[#007AFF] shadow-lg text-white' : 'text-text-sec hover:text-text-main hover:bg-bg-card'">今日</button>
               <button @click="dashboardRange = '7days'" class="px-5 py-2 text-xs font-bold rounded-lg transition-all" :class="dashboardRange === '7days' ? 'bg-[#007AFF] shadow-lg text-white' : 'text-text-sec hover:text-text-main hover:bg-bg-card'">近 7 天</button>
@@ -93,7 +167,7 @@ const selectedSubTagDailyGroups = computed(() => {
               <button @click="dashboardRange = 'custom'" class="px-5 py-2 text-xs font-bold rounded-lg transition-all" :class="dashboardRange === 'custom' ? 'bg-[#007AFF] shadow-lg text-white' : 'text-text-sec hover:text-text-main hover:bg-bg-card'">自定义</button>
            </div>
            <div v-if="dashboardRange !== 'today'" class="flex bg-bg-input rounded-xl p-1 gap-1 border border-border-main/50 shadow-inner">
-              <button @click="dailyAverageMode = 'natural'" class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all" :class="dailyAverageMode === 'natural' ? 'bg-bg-card shadow-sm text-text-main' : 'text-text-sec hover:text-text-main'">自然天数 ({{dashboardStats.naturalDays}}天)</button>
+              <button @click="dailyAverageMode = 'natural'" class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all" :class="dailyAverageMode === 'natural' ? 'bg-bg-card shadow-sm text-text-main' : 'text-text-sec hover:text-text-main'">统计天数 ({{dashboardStats.naturalDays}}天)</button>
               <button @click="dailyAverageMode = 'recorded'" class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all" :class="dailyAverageMode === 'recorded' ? 'bg-bg-card shadow-sm text-text-main' : 'text-text-sec hover:text-text-main'">记录天数 ({{dashboardStats.recordedDays}}天)</button>
            </div>
         </div>
@@ -140,6 +214,24 @@ const selectedSubTagDailyGroups = computed(() => {
              </div>
            </div>
         </div>
+        <div v-if="dashboardRange !== 'today'" class="flex flex-wrap items-center gap-2 text-xs">
+          <template v-if="activeExcludedDates.length > 0">
+            <span class="text-text-sec font-medium mr-1">统计 {{ dashboardStats.naturalDays }} 天 · 已排除 {{ activeExcludedDates.length }} 天</span>
+            <button v-for="date in activeExcludedDates.slice(0, 3)" :key="date" @click="excludedDates = excludedDates.filter(day => day !== date)" :aria-label="`恢复统计 ${date}`" class="inline-flex items-center gap-1.5 rounded-lg bg-bg-input px-2 py-1.5 text-text-sec hover:text-text-main transition-colors">
+              {{ date.slice(5).replace('-', '/') }} <X :size="12" />
+            </button>
+            <button @click="openExclusionCalendar" class="px-2 py-1.5 rounded-lg text-[#007AFF] hover:bg-bg-input transition-colors">{{ activeExcludedDates.length > 3 ? '查看全部 / 编辑' : '编辑' }}</button>
+            <button @click="excludedDates = []" class="px-2 py-1.5 rounded-lg text-text-sec hover:text-text-main hover:bg-bg-input transition-colors">清空</button>
+          </template>
+          <button v-else @click="openExclusionCalendar" class="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-text-sec hover:text-text-main hover:bg-bg-input transition-colors" :disabled="dashboardRangeDays === 0">
+            <Calendar :size="14" /> 排除日期
+          </button>
+        </div>
+      </div>
+
+      <div v-if="dashboardRangeDays > 0 && dashboardStats.naturalDays === 0" class="flex flex-wrap items-center justify-between gap-3 mb-6 rounded-2xl border border-border-main bg-bg-card px-5 py-4">
+        <span class="text-sm text-text-sec">没有参与统计的日期</span>
+        <button @click="excludedDates = []" class="text-xs font-bold text-[#007AFF]">清空排除</button>
       </div>
 
       <!-- Overview Cards -->
@@ -150,7 +242,7 @@ const selectedSubTagDailyGroups = computed(() => {
          </div>
          <div class="bg-bg-card border border-border-main rounded-3xl p-6 shadow-sm flex flex-col justify-center">
             <div class="text-xs font-bold text-text-sec mb-2">日均时长</div>
-            <div class="text-4xl font-black text-[#007AFF]">{{ formatMinutes(dashboardStats.dailyAverage) }}</div>
+            <div class="text-4xl font-black text-[#007AFF]">{{ dashboardStats.daysCount > 0 ? formatMinutes(dashboardStats.dailyAverage) : '—' }}</div>
          </div>
       </div>
 
@@ -203,7 +295,7 @@ const selectedSubTagDailyGroups = computed(() => {
               </div>
             </div>
             <div v-else class="border-t border-border-main/50 pt-5 text-sm font-bold text-text-sec">
-              当前范围内所有事件都已标记副标签
+              {{ dashboardStats.naturalDays === 0 ? '没有参与统计的日期' : dashboardEvents.length === 0 ? '当前统计日期内没有记录数据' : '当前统计日期内所有事件都已标记副标签' }}
             </div>
          </div>
 
@@ -239,8 +331,53 @@ const selectedSubTagDailyGroups = computed(() => {
          
          <div v-if="dashboardStats.mainTags.length === 0" class="text-center py-20">
            <BarChart2 :size="48" class="mx-auto mb-4 text-text-sec opacity-20" />
-           <div class="text-text-sec font-bold">该时间范围内没有记录数据</div>
+           <div class="text-text-sec font-bold">{{ dashboardStats.naturalDays === 0 ? '没有参与统计的日期' : '当前统计日期内没有记录数据' }}</div>
          </div>
+      </div>
+    </div>
+
+    <div v-if="isExclusionCalendarOpen" class="fixed inset-0 z-120 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" @click.self="closeExclusionCalendar">
+      <div ref="exclusionDialogRef" role="dialog" aria-modal="true" aria-labelledby="exclusion-calendar-title" tabindex="-1" class="bg-bg-card rounded-3xl shadow-2xl w-full max-w-sm max-h-[86vh] overflow-y-auto border border-border-main p-6 outline-none">
+        <div class="flex items-center justify-between gap-3 mb-2">
+          <h2 id="exclusion-calendar-title" class="text-base font-black text-text-main">排除日期</h2>
+          <button @click="closeExclusionCalendar" aria-label="关闭排除日期" class="p-1.5 rounded-lg text-text-sec hover:bg-bg-input hover:text-text-main"><X :size="18" /></button>
+        </div>
+        <p class="text-xs text-text-sec leading-relaxed mb-5">点击日期排除，再次点击恢复。应用后更新统计。</p>
+        <div class="text-[11px] text-text-sec mb-3">{{ dashboardStartDate }} 至 {{ dashboardEndDate }}</div>
+        <div class="flex items-center justify-between mb-4">
+          <button @click="changeExclusionMonth(-1)" :disabled="!canChangeExclusionMonth(-1)" aria-label="上个月" class="p-2 rounded-xl hover:bg-bg-input disabled:opacity-25 disabled:cursor-not-allowed"><ChevronLeft :size="16" /></button>
+          <span class="text-sm font-black">{{ exclusionCalendarMonth.getFullYear() }}年 {{ exclusionCalendarMonth.getMonth() + 1 }}月</span>
+          <button @click="changeExclusionMonth(1)" :disabled="!canChangeExclusionMonth(1)" aria-label="下个月" class="p-2 rounded-xl hover:bg-bg-input disabled:opacity-25 disabled:cursor-not-allowed"><ChevronRight :size="16" /></button>
+        </div>
+        <div class="grid grid-cols-7 gap-1 text-center mb-2">
+          <div v-for="day in ['一', '二', '三', '四', '五', '六', '日']" :key="day" class="text-[10px] font-bold text-text-sec">{{ day }}</div>
+        </div>
+        <div class="grid grid-cols-7 gap-1">
+          <div v-for="(date, index) in exclusionCalendarDays" :key="index" class="aspect-square flex items-center justify-center">
+            <button v-if="date" @click="toggleExcludedDate(date)" :disabled="!isDateInRange(date)" :aria-pressed="draftExcludedSet.has(toISODate(date))" :aria-label="`${toISODate(date)}，${!isDateInRange(date) ? '范围外' : draftExcludedSet.has(toISODate(date)) ? '已排除，点击恢复' : '参与统计，点击排除'}`" class="w-9 h-9 rounded-xl text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]" :class="!isDateInRange(date) ? 'text-text-sec opacity-30 cursor-not-allowed' : draftExcludedSet.has(toISODate(date)) ? 'bg-bg-input text-text-sec line-through hover:bg-bg-hover' : 'bg-[#007AFF]/10 text-[#007AFF] hover:bg-[#007AFF]/20'">
+              {{ date.getDate() }}
+            </button>
+          </div>
+        </div>
+        <div class="flex items-center gap-4 text-[10px] text-text-sec mt-4">
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-[#007AFF]/20"></span>参与统计</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-bg-input border border-border-main"></span>已排除</span>
+        </div>
+        <div v-if="draftExcludedDates.length > 0" class="mt-4 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+          <button v-for="date in draftExcludedDates" :key="date" @click="draftExcludedDates = draftExcludedDates.filter(day => day !== date)" :aria-label="`恢复统计 ${date}`" class="inline-flex items-center gap-1.5 rounded-lg bg-bg-input px-2 py-1 text-[10px] text-text-sec hover:text-text-main">
+            {{ date }} <X :size="11" />
+          </button>
+        </div>
+        <div class="mt-5 pt-4 border-t border-border-main/60">
+          <div class="flex items-center justify-between gap-2 mb-4">
+            <span class="text-xs font-medium text-text-sec" aria-live="polite">已排除 {{ draftExcludedDates.length }} 天，参与统计 {{ draftIncludedDays }} 天</span>
+            <button v-if="draftExcludedDates.length > 0" @click="draftExcludedDates = []" class="text-xs text-[#007AFF] shrink-0">清空</button>
+          </div>
+          <div class="flex justify-end gap-2">
+            <button @click="closeExclusionCalendar" class="px-4 py-2 rounded-xl text-xs font-bold text-text-sec hover:bg-bg-input">取消</button>
+            <button @click="applyExcludedDates" class="px-5 py-2 rounded-xl text-xs font-bold bg-[#007AFF] text-white hover:bg-[#007AFF]/90">应用</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -256,6 +393,7 @@ const selectedSubTagDailyGroups = computed(() => {
               <span class="bg-bg-input px-2 py-1 rounded-lg border border-border-main/40">总时长 {{ formatMinutes(selectedSubTagTotal) }}</span>
               <span class="bg-bg-input px-2 py-1 rounded-lg border border-border-main/40">事件 {{ selectedSubTagEvents.length }} 条</span>
               <span class="bg-bg-input px-2 py-1 rounded-lg border border-border-main/40">{{ dashboardStartDate }} 至 {{ dashboardEndDate }}</span>
+              <span v-if="activeExcludedDates.length > 0" class="bg-bg-input px-2 py-1 rounded-lg border border-border-main/40">已排除 {{ activeExcludedDates.length }} 天 · 统计 {{ dashboardStats.naturalDays }} 天</span>
             </div>
           </div>
           <button @click="selectedSubTag = null" class="p-2 text-text-sec hover:text-text-main hover:bg-bg-input rounded-xl shrink-0"><X :size="22" /></button>
