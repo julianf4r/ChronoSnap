@@ -24,8 +24,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             platform::desktop_platform,
-            platform::screen_capture_permission,
-            platform::request_screen_capture_permission,
             engine::toggle_pause,
             engine::get_pause_state,
             engine::get_timeline,
@@ -66,6 +64,7 @@ pub fn run() {
                     window.hide()?;
                 }
             }
+            #[cfg(not(target_os = "macos"))]
             engine::start_engine(app.handle().clone());
             Ok(())
         })

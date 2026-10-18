@@ -1,11 +1,17 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+#[cfg(not(target_os = "macos"))]
 use tokio::time::{interval, Duration};
-use tauri::{AppHandle, Manager, Emitter};
+#[cfg(not(target_os = "macos"))]
+use tauri::{AppHandle, Manager};
+use tauri::Emitter;
+#[cfg(not(target_os = "macos"))]
 use xcap::Monitor;
+#[cfg(not(target_os = "macos"))]
 use chrono::Local;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "macos"))]
 use tauri_plugin_store::StoreExt;
 use serde::Serialize;
 
@@ -46,12 +52,20 @@ fn can_write_temp_file(dir: &Path) -> bool {
 
 #[tauri::command]
 pub fn check_storage_health(save_path: String, db_path: String) -> StorageHealth {
-    let save_dir = PathBuf::from(save_path);
+    #[cfg(not(target_os = "macos"))]
+    let (save_path_exists, save_path_writable) = {
+        let save_dir = PathBuf::from(save_path);
+        let exists = save_dir.is_dir();
+        (exists, exists && can_write_temp_file(&save_dir))
+    };
+    #[cfg(target_os = "macos")]
+    let (save_path_exists, save_path_writable) = {
+        let _ = save_path;
+        (false, false)
+    };
     let db_file = PathBuf::from(db_path);
     let db_parent = db_file.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from(""));
 
-    let save_path_exists = save_dir.is_dir();
-    let save_path_writable = save_path_exists && can_write_temp_file(&save_dir);
     let db_parent_exists = db_parent.is_dir();
     let db_parent_writable = db_parent_exists && can_write_temp_file(&db_parent);
     let db_file_exists = db_file.is_file();
@@ -62,6 +76,7 @@ pub fn check_storage_health(save_path: String, db_path: String) -> StorageHealth
     };
 
     let mut issues = Vec::new();
+    #[cfg(not(target_os = "macos"))]
     if !save_path_exists {
         issues.push("截图保存目录不存在，请重新选择一个可用目录".into());
     } else if !save_path_writable {
@@ -368,6 +383,7 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
+#[cfg(not(target_os = "macos"))]
 pub fn start_engine(app: AppHandle) {
     // Start Cleanup routine
     let app_cleanup = app.clone();
@@ -398,12 +414,6 @@ pub fn start_engine(app: AppHandle) {
                 continue;
             }
 
-            // Never trigger macOS's capture API before authorization. Apart from
-            // unwanted prompts, an unauthorized capture may contain only wallpaper.
-            if !crate::platform::screen_capture_permission() {
-                continue;
-            }
-
             let interval_secs = state.capture_interval_secs.load(Ordering::SeqCst);
             if interval_secs == 0 { continue; }
 
@@ -424,6 +434,7 @@ pub fn start_engine(app: AppHandle) {
     });
 }
 
+#[cfg(not(target_os = "macos"))]
 async fn run_cleanup(app: &AppHandle) -> anyhow::Result<()> {
     let store = match app.store("config.json") {
         Ok(s) => s,
@@ -467,8 +478,8 @@ async fn run_cleanup(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "macos"))]
 async fn capture_screens(app: &AppHandle) -> anyhow::Result<()> {
-    anyhow::ensure!(crate::platform::screen_capture_permission(), "需要屏幕录制权限");
     let store = match app.store("config.json") {
         Ok(s) => s,
         Err(_) => return Ok(()),
@@ -516,6 +527,7 @@ async fn capture_screens(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(any(test, not(target_os = "macos")))]
 struct CapturedScreen {
     x: i32,
     y: i32,
@@ -524,13 +536,13 @@ struct CapturedScreen {
     pixels: image::RgbaImage,
 }
 
+#[cfg(any(test, not(target_os = "macos")))]
 fn combine_screens(screens: Vec<CapturedScreen>) -> anyhow::Result<image::RgbaImage> {
     anyhow::ensure!(!screens.is_empty(), "没有可用的显示器");
     let mut scale = 1.0_f64;
     for screen in &screens {
         anyhow::ensure!(screen.width > 0 && screen.height > 0, "显示器尺寸无效");
         anyhow::ensure!(screen.pixels.width() > 0 && screen.pixels.height() > 0, "截图为空");
-        // macOS positions use points while Retina captures use physical pixels.
         // Use one common scale to preserve detail and the desktop arrangement.
         scale = scale.max(screen.pixels.width() as f64 / screen.width as f64)
             .max(screen.pixels.height() as f64 / screen.height as f64);
@@ -561,6 +573,30 @@ fn combine_screens(screens: Vec<CapturedScreen>) -> anyhow::Result<image::RgbaIm
 mod tests {
     use super::*;
     use image::{Rgba, RgbaImage};
+
+    #[test]
+    fn storage_health_applies_platform_requirements() {
+        let dir = std::env::temp_dir().join(format!(
+            "chrono-snap-storage-test-{}-{}",
+            std::process::id(),
+            chrono::Local::now().timestamp_nanos_opt().unwrap()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let db_path = dir.join("records.db").to_string_lossy().into_owned();
+        let health = check_storage_health(String::new(), db_path);
+        assert_eq!(health.ok, cfg!(target_os = "macos"));
+        assert!(health.db_parent_writable);
+        assert!(!health.save_path_exists);
+        assert!(!health.save_path_writable);
+
+        let health = check_storage_health(
+            dir.to_string_lossy().into_owned(),
+            dir.join("missing").join("records.db").to_string_lossy().into_owned(),
+        );
+        assert!(!health.ok);
+        assert!(health.issues.iter().any(|issue| issue.contains("数据库")));
+        fs::remove_dir(&dir).unwrap();
+    }
 
     #[test]
     fn retina_capture_keeps_all_pixels() {

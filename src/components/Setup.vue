@@ -5,6 +5,7 @@ import { Settings, FolderOpen, Plus } from "lucide-vue-next";
 import { savePath, dbPath, isSetupComplete, captureInterval, retainDays, theme, showToast } from "../store";
 import { load as loadStore } from "@tauri-apps/plugin-store";
 import { StorageHealth } from "../types";
+import { desktopPlatform, supportsScreenCapture } from "../platform";
 
 const emit = defineEmits(["complete"]);
 
@@ -13,7 +14,7 @@ const selectDBFile = async () => { const s = await open({ filters: [{ name: "SQL
 const createDBFile = async () => { const s = await save({ filters: [{ name: "SQLite", extensions: ["db"] }] }); if (s) dbPath.value = s as string; };
 
 const completeSetup = async () => {
-  if (savePath.value && dbPath.value) {
+  if (desktopPlatform.value && dbPath.value && (!supportsScreenCapture.value || savePath.value)) {
     const health = await invoke<StorageHealth>("check_storage_health", { savePath: savePath.value, dbPath: dbPath.value });
     if (!health.ok) {
       showToast(health.issues[0] || "存储路径不可用", "error");
@@ -21,13 +22,17 @@ const completeSetup = async () => {
     }
 
     await invoke("update_db_path", { path: dbPath.value });
-    await invoke("update_interval", { seconds: captureInterval.value });
+    if (supportsScreenCapture.value) {
+      await invoke("update_interval", { seconds: captureInterval.value });
+    }
 
     const store = await loadStore("config.json");
-    await store.set("savePath", savePath.value);
     await store.set("dbPath", dbPath.value);
-    await store.set("retainDays", retainDays.value);
-    await store.set("captureInterval", captureInterval.value);
+    if (supportsScreenCapture.value) {
+      await store.set("savePath", savePath.value);
+      await store.set("retainDays", retainDays.value);
+      await store.set("captureInterval", captureInterval.value);
+    }
     await store.set("theme", theme.value);
     await store.save();
 
@@ -43,7 +48,7 @@ const completeSetup = async () => {
       <Settings :size="40" class="text-[#007AFF] mx-auto mb-8" />
       <h1 class="text-3xl font-bold mb-4">初始化设置</h1>
       <div class="space-y-6 text-left mb-10">
-        <div class="space-y-2">
+        <div v-if="supportsScreenCapture" class="space-y-2">
           <label class="text-xs font-bold text-text-sec">截图保存目录</label>
           <div class="flex gap-2">
             <input type="text" readonly :value="savePath" placeholder="请选择目录..." class="flex-1 bg-bg-input rounded-xl px-4 py-2.5 text-sm outline-none" />
@@ -61,7 +66,7 @@ const completeSetup = async () => {
           </div>
         </div>
       </div>
-      <button @click="completeSetup" :disabled="!savePath || !dbPath" class="bg-[#007AFF] text-white px-8 py-4 rounded-2xl font-semibold w-full disabled:opacity-50 transition-all active:scale-95">开始使用</button>
+      <button @click="completeSetup" :disabled="!desktopPlatform || !dbPath || (supportsScreenCapture && !savePath)" class="bg-[#007AFF] text-white px-8 py-4 rounded-2xl font-semibold w-full disabled:opacity-50 transition-all active:scale-95">开始使用</button>
     </div>
   </div>
 </template>

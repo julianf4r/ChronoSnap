@@ -19,10 +19,10 @@ import {
   calendarStatus, loadCalendarStatus, currentCalendarMonthStr
 } from "./store";
 import { DBEvent, TimelineItem, StorageHealth } from "./types";
+import { getDesktopPlatform, supportsScreenCapture } from "./platform";
 
 // --- Components ---
 import Setup from "./components/Setup.vue";
-import ScreenCapturePermission from "./components/ScreenCapturePermission.vue";
 import Preview from "./components/views/Preview.vue";
 import Plan from "./components/views/Plan.vue";
 import Dashboard from "./components/views/Dashboard.vue";
@@ -151,6 +151,7 @@ watch(currentDate, () => {
 });
 
 onMounted(async () => {
+  await getDesktopPlatform();
   window.addEventListener('mousedown', handleClickOutside);
   startMinuteTimer();
 
@@ -166,8 +167,8 @@ onMounted(async () => {
   const path = await store.get<string>("savePath");
   const dPath = await store.get<string>("dbPath");
   
-  if (path && dPath) {
-    savePath.value = path;
+  if (dPath && (!supportsScreenCapture.value || path)) {
+    savePath.value = path || "";
     dbPath.value = dPath;
     isSetupComplete.value = true;
     
@@ -184,8 +185,10 @@ onMounted(async () => {
     await initializeConfiguredStorage(true);
   }
 
-  await listen<boolean>("pause-state-changed", (event) => { isPaused.value = event.payload; });
-  captureUnlisten = await listen("refresh-timeline", () => { loadTimeline(); });
+  if (supportsScreenCapture.value) {
+    await listen<boolean>("pause-state-changed", (event) => { isPaused.value = event.payload; });
+    captureUnlisten = await listen("refresh-timeline", () => { loadTimeline(); });
+  }
 });
 
 onUnmounted(() => { 
@@ -203,7 +206,7 @@ const handleSetupComplete = async () => {
 };
 
 const checkStorageHealth = async () => {
-  if (!savePath.value || !dbPath.value) return null;
+  if (!dbPath.value || (supportsScreenCapture.value && !savePath.value)) return null;
   isStorageHealthChecking.value = true;
   try {
     const health = await invoke<StorageHealth>("check_storage_health", { savePath: savePath.value, dbPath: dbPath.value });
@@ -223,8 +226,10 @@ const initializeConfiguredStorage = async (autoScroll = false) => {
 
   try {
     await invoke("update_db_path", { path: dbPath.value });
-    await invoke("update_interval", { seconds: captureInterval.value });
-    isPaused.value = await invoke<boolean>("get_pause_state");
+    if (supportsScreenCapture.value) {
+      await invoke("update_interval", { seconds: captureInterval.value });
+      isPaused.value = await invoke<boolean>("get_pause_state");
+    }
   } catch (e) {
     storageHealth.value = {
       ok: false,
@@ -265,21 +270,21 @@ const applyTheme = (val: string) => {
 };
 
 const loadTimeline = async (autoScroll = false) => { 
-  if (savePath.value) {
-    const rawImages = await invoke<TimelineItem[]>("get_timeline", { date: currentDate.value, baseDir: savePath.value }); 
-    // Pre-calculate logical minutes to prevent high-cost recalculation on every mouse move
-    timelineImages.value = rawImages.map(img => ({
-      ...img,
-      logical_minute: timeToLogicalMinutes(img.time, img.isNextDay)
-    }));
-    
-    if (autoScroll && timelineRef.value) {
-      await nextTick();
-      const now = new Date();
-      const currentMin = now.getHours() * 60 + now.getMinutes();
-      const logicalMin = (currentMin < TIME_OFFSET_MINUTES ? currentMin + 1440 : currentMin) - TIME_OFFSET_MINUTES;
-      timelineRef.value.scrollTop = Math.max(0, logicalMin * timelineZoom.value - timelineRef.value.clientHeight / 2);
-    }
+  const rawImages = supportsScreenCapture.value && savePath.value
+    ? await invoke<TimelineItem[]>("get_timeline", { date: currentDate.value, baseDir: savePath.value })
+    : [];
+  // Pre-calculate logical minutes to prevent high-cost recalculation on every mouse move
+  timelineImages.value = rawImages.map(img => ({
+    ...img,
+    logical_minute: timeToLogicalMinutes(img.time, img.isNextDay)
+  }));
+
+  if (autoScroll && timelineRef.value) {
+    await nextTick();
+    const now = new Date();
+    const currentMin = now.getHours() * 60 + now.getMinutes();
+    const logicalMin = (currentMin < TIME_OFFSET_MINUTES ? currentMin + 1440 : currentMin) - TIME_OFFSET_MINUTES;
+    timelineRef.value.scrollTop = Math.max(0, logicalMin * timelineZoom.value - timelineRef.value.clientHeight / 2);
   }
 };
 
@@ -538,7 +543,6 @@ const togglePause = async () => {
 
 <template>
   <div class="h-screen w-screen flex flex-col overflow-hidden text-text-main bg-bg-main">
-    <ScreenCapturePermission />
     <Setup v-if="!isSetupComplete" @complete="handleSetupComplete" />
     <div v-else class="flex flex-1 overflow-hidden">
       <!-- Sidebar -->
@@ -613,7 +617,7 @@ const togglePause = async () => {
         </div>
 
         <div class="p-4 border-t border-border-main bg-bg-card/50 flex justify-around">
-          <button @click="togglePause" class="p-3 rounded-2xl" :class="isPaused ? 'text-[#FF3B30]' : 'text-text-sec'"><Play v-if="isPaused" :size="22" /><Pause v-else :size="22" /></button>
+          <button v-if="supportsScreenCapture" @click="togglePause" class="p-3 rounded-2xl" :class="isPaused ? 'text-[#FF3B30]' : 'text-text-sec'"><Play v-if="isPaused" :size="22" /><Pause v-else :size="22" /></button>
           <button @click="handleQuickAddEvent" class="p-3 rounded-2xl text-text-sec"><SquarePlus :size="22" /></button>
           <button @click="isTagManagerOpen = true" class="p-3 rounded-2xl text-text-sec"><TagIcon :size="22" /></button>
           <button @click="isExportModalOpen = true" class="p-3 rounded-2xl text-text-sec"><Download :size="22" /></button>
@@ -630,7 +634,7 @@ const togglePause = async () => {
           </div>
           <div class="flex items-center gap-4">
             <div class="flex bg-bg-input rounded-xl p-1 gap-1 border border-border-main/50 shadow-inner">
-               <button @click="viewMode = 'preview'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'preview' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><ImageIcon :size="14"/> 预览</button>
+               <button v-if="supportsScreenCapture" @click="viewMode = 'preview'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'preview' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><ImageIcon :size="14"/> 预览</button>
                <button @click="viewMode = 'plan'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'plan' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><ChartGantt :size="14"/> 计划</button>
                <button @click="viewMode = 'dashboard'" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5" :class="viewMode === 'dashboard' ? 'bg-bg-card shadow-md text-text-main' : 'text-text-sec hover:text-text-main'"><BarChart2 :size="14"/> 统计</button>
             </div>
@@ -638,7 +642,7 @@ const togglePause = async () => {
         </div>
 
         <div class="flex-1 relative overflow-hidden">
-          <Preview v-show="viewMode === 'preview'" />
+          <Preview v-if="supportsScreenCapture" v-show="viewMode === 'preview'" />
           <Plan v-if="viewMode === 'plan'" @select-date="selectDate" />
           <Dashboard v-if="viewMode === 'dashboard'" />
         </div>
@@ -660,7 +664,7 @@ const togglePause = async () => {
           </div>
           <div>
             <h2 class="text-xl font-black mb-1">存储路径不可用</h2>
-            <p class="text-sm text-text-sec font-medium leading-relaxed">截图目录或数据库文件当前不可访问，已暂停加载本地记录。请修正路径后重新检测。</p>
+            <p class="text-sm text-text-sec font-medium leading-relaxed">{{ supportsScreenCapture ? '截图目录或数据库文件当前不可访问' : '数据库文件当前不可访问' }}，已暂停加载本地记录。请修正路径后重新检测。</p>
           </div>
         </div>
         <div class="p-8 space-y-5">
@@ -674,7 +678,7 @@ const togglePause = async () => {
             </div>
           </div>
           <div class="space-y-2 text-xs font-bold text-text-sec">
-            <div class="truncate">截图目录：{{ savePath }}</div>
+            <div v-if="supportsScreenCapture" class="truncate">截图目录：{{ savePath }}</div>
             <div class="truncate">数据库文件：{{ dbPath }}</div>
           </div>
           <div class="flex gap-3 pt-2">

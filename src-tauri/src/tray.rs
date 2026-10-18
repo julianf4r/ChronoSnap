@@ -1,21 +1,30 @@
 #[cfg(not(target_os = "macos"))]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+#[cfg(not(target_os = "macos"))]
+use tauri::{Emitter, Manager};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager,
+    AppHandle,
 };
 
 pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let open_i = MenuItem::with_id(app, "open", "打开主界面", true, None::<&str>)?;
+    #[cfg(not(target_os = "macos"))]
     let toggle_i = MenuItem::with_id(app, "toggle", "暂停记录", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
+    #[cfg(not(target_os = "macos"))]
     let menu = Menu::with_items(app, &[&open_i, &toggle_i, &quit_i])?;
+    #[cfg(target_os = "macos")]
+    let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
 
     // Store the toggle item in state for future updates
-    let state = app.state::<crate::engine::AppState>();
-    *state.toggle_menu_item.lock().unwrap() = Some(toggle_i.clone());
+    #[cfg(not(target_os = "macos"))]
+    {
+        let state = app.state::<crate::engine::AppState>();
+        *state.toggle_menu_item.lock().unwrap() = Some(toggle_i.clone());
+    }
 
     let builder = TrayIconBuilder::with_id("main_tray")
         .tooltip("瞬影")
@@ -26,6 +35,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             "open" => {
                 crate::show_main_window(app);
             }
+            #[cfg(not(target_os = "macos"))]
             "toggle" => {
                 let state = app.state::<crate::engine::AppState>();
                 let current = state.is_paused.load(std::sync::atomic::Ordering::SeqCst);
