@@ -13,9 +13,11 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "瞬影 - 时间记录 v0.2.11",
         "width": 1760,
-        "height": 1100
+        "height": 1100,
+        "backgroundThrottling": "disabled"
       }
     ],
     "security": {
@@ -28,7 +30,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "msi",
+    "targets": "all",
+    "macOS": {
+      "minimumSystemVersion": "14.0"
+    },
     "windows": {
       "wix": {
         "language": "zh-CN"

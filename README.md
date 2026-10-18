@@ -16,9 +16,9 @@ ChronoSnap 是一款本地时间记录工具。它会按设定间隔自动截取
 
 ## Windows 与 macOS
 
-新增 macOS 14 及以上版本的适配，截图的实际兼容性仍待验证。发布工作流保留 Windows MSI 与便携版，并增加适用于 Apple Silicon 和 Intel 的 macOS 通用 DMG 与 `.app.zip`。
+支持 Windows 和 macOS 14 及以上版本。发布工作流保留 Windows MSI 与便携版，并增加适用于 Apple Silicon 和 Intel 的 macOS 通用 DMG 与 `.app.zip`。
 
-当前继续使用原有 `xcap 0.9.3`，其 macOS 截图实现调用了 Apple 已弃用的 `CGWindowListCreateImage`。本次已通过本机编译、Apple Silicon `.app` 打包与图像合并单元测试，但尚未完成系统授权后的实际截图验证，也未迁移到 ScreenCaptureKit。该迁移需另行评估并确认后实施。
+当前继续使用原有 `xcap 0.9.3`。已通过本机编译、Apple Silicon `.app` 打包与图像合并单元测试，用户已在自己的 Mac 上实测确认角标、提醒、截图和双屏拼接正常。该库的 macOS 实现仍调用 Apple 已弃用的 `CGWindowListCreateImage`；目前保留现有实现，后续如需迁移到 ScreenCaptureKit，再另行评估并确认。
 
 - macOS 首次使用时，点击应用内「请求屏幕录制权限」，并在「系统设置 → 隐私与安全性 → 屏幕录制（或屏幕与系统音频录制）」中允许 ChronoSnap。系统若要求重新打开应用，请从菜单栏退出后再打开。未授权时跳过自动截图，时间记录、标签和统计等功能仍可使用。
 - 提醒首次触发时会请求系统通知权限；通知的显示方式由 macOS 通知设置控制。
@@ -38,16 +38,27 @@ macOS 配置关闭隐藏窗口后的 WebView 定时器暂停，以便后台提�
 ```sh
 pnpm install --frozen-lockfile
 pnpm tauri dev
-pnpm tauri build
 ```
 
-Tauri 会按平台自动合并配置：Windows 保留默认 MSI 配置，macOS 自动使用 `src-tauri/tauri.macos.conf.json` 生成 `.app` 和 DMG。
+所有平台共用 `src-tauri/tauri.conf.json`，其中的 Windows 和 macOS 专属设置只在对应平台生效。主配置的 `bundle.targets` 为 `all`，直接运行 `pnpm tauri build` 会生成当前平台支持的默认安装包格式；使用以下命令可明确限定输出格式，与发布流程保持一致。
+
+Windows 上生成 MSI：
+
+```sh
+pnpm tauri build --bundles msi
+```
+
+Mac 上生成 `.app` 和 DMG：
+
+```sh
+pnpm tauri build --bundles app,dmg
+```
 
 在 Mac 上构建同时支持 Apple Silicon 和 Intel 的通用包：
 
 ```sh
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-pnpm tauri build --target universal-apple-darwin
+pnpm tauri build --target universal-apple-darwin --bundles app,dmg
 ```
 
 验证适配时，请在安装的 `.app` 中检查屏幕录制授权／拒绝、通知、Dock 角标增加及清除、关闭窗口后继续记录、Dock 和菜单栏恢复窗口，以及多显示器截图。开发进程与正式安装应用的系统授权可能不同，需要分别授权。
