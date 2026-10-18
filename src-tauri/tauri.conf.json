@@ -32,7 +32,8 @@
     "active": true,
     "targets": "all",
     "macOS": {
-      "minimumSystemVersion": "14.0"
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "-"
     },
     "windows": {
       "wix": {

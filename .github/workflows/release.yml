@@ -106,6 +106,13 @@ jobs:
       - name: Build macOS app for Apple Silicon and Intel
         run: pnpm tauri build --target universal-apple-darwin --bundles app,dmg
 
+      - name: Verify macOS app signature
+        run: |
+          codesign --verify --deep --strict --verbose=2 \
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/ChronoSnap.app
+          codesign --display --verbose=2 \
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/ChronoSnap.app
+
       - name: Package macOS app
         run: |
           mkdir -p src-tauri/target/universal-apple-darwin/release/artifacts
