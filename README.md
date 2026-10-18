@@ -14,6 +14,44 @@ ChronoSnap 是一款本地时间记录工具。它会按设定间隔自动截取
 - 支持浅色、深色和跟随系统主题
 - 支持设置截图保存目录、SQLite 数据库文件、截图间隔和保留天数
 
+## Windows 与 macOS
+
+新增 macOS 14 及以上版本的适配，截图的实际兼容性仍待验证。发布工作流保留 Windows MSI 与便携版，并增加适用于 Apple Silicon 和 Intel 的 macOS 通用 DMG 与 `.app.zip`。
+
+当前继续使用原有 `xcap 0.9.3`，其 macOS 截图实现调用了 Apple 已弃用的 `CGWindowListCreateImage`。本次已通过本机编译、Apple Silicon `.app` 打包与图像合并单元测试，但尚未完成系统授权后的实际截图验证，也未迁移到 ScreenCaptureKit。该迁移需另行评估并确认后实施。
+
+- macOS 首次使用时，点击应用内「请求屏幕录制权限」，并在「系统设置 → 隐私与安全性 → 屏幕录制（或屏幕与系统音频录制）」中允许 ChronoSnap。系统若要求重新打开应用，请从菜单栏退出后再打开。未授权时跳过自动截图，时间记录、标签和统计等功能仍可使用。
+- 提醒首次触发时会请求系统通知权限；通知的显示方式由 macOS 通知设置控制。
+- 未完成的逾期提醒数量在 Windows 任务栏图标上显示，在 macOS Dock 图标上使用系统数字角标显示；数量为零时清除。Windows 的覆盖图标接口只在 Windows 调用。
+- macOS 点击菜单栏图标可打开菜单，选择打开主界面、暂停／恢复记录或退出。关闭窗口后应用继续记录，点击 Dock 图标可重新打开窗口。
+- 保存事件和任务支持 `Ctrl+Enter`，macOS 也支持 `Command+Enter`；时间轴支持按住 `Ctrl` 或 `Command` 滚动缩放。
+- 截图合并支持 Retina 与普通显示器混用，并保留各显示器的相对布局；低密度屏幕会按统一比例放大。
+
+macOS 配置关闭隐藏窗口后的 WebView 定时器暂停，以便后台提醒和角标继续刷新。该系统能力要求 macOS 14，因此本次未扩展对更早 macOS 版本的支持。电脑睡眠期间不会截图或触发提醒。
+
+目前发布流程未配置 Apple Developer 签名和公证；在其他 Mac 上分发时可能受 Gatekeeper 限制。本次不自动配置签名或修改系统安全设置。`scripts/register_startup.ps1` 仅用于 Windows 的手动快捷方式注册，并包含平台检查。现有自启动插件使用 macOS LaunchAgent，但应用目前没有启用自启动的设置入口，也不会自动开启。
+
+## 本地开发与打包
+
+需要 Node.js、pnpm 和 Rust；macOS 还需要 Xcode Command Line Tools。
+
+```sh
+pnpm install --frozen-lockfile
+pnpm tauri dev
+pnpm tauri build
+```
+
+Tauri 会按平台自动合并配置：Windows 保留默认 MSI 配置，macOS 自动使用 `src-tauri/tauri.macos.conf.json` 生成 `.app` 和 DMG。
+
+在 Mac 上构建同时支持 Apple Silicon 和 Intel 的通用包：
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+pnpm tauri build --target universal-apple-darwin
+```
+
+验证适配时，请在安装的 `.app` 中检查屏幕录制授权／拒绝、通知、Dock 角标增加及清除、关闭窗口后继续记录、Dock 和菜单栏恢复窗口，以及多显示器截图。开发进程与正式安装应用的系统授权可能不同，需要分别授权。
+
 ## 数据存储
 
 ChronoSnap 默认只使用本地数据：

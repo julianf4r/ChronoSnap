@@ -2,6 +2,7 @@ import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Image } from "@tauri-apps/api/image";
+import { getDesktopPlatform } from "../platform";
 import { Tag, DBEvent, TimelineItem, Toast, Reminder, PlanTask } from "../types";
 
 export const TIME_OFFSET_MINUTES = 180;
@@ -171,16 +172,23 @@ export const refreshBadgeCount = async () => {
       minute: minute 
     });
     overdueCount.value = count;
-    await updateTaskbarBadge(count);
+    await updateAppBadge(count);
   } catch (e) {
     console.error("Failed to refresh badge count:", e);
   }
 };
 
 
-const updateTaskbarBadge = async (count: number) => {
+const updateAppBadge = async (count: number) => {
   try {
+    const platform = await getDesktopPlatform();
     const win = getCurrentWindow();
+    if (platform === "macos") {
+      await win.setBadgeCount(count > 0 ? count : undefined);
+      return;
+    }
+    if (platform !== "windows") return;
+
     if (count <= 0) {
       await win.setOverlayIcon(undefined);
       return;
@@ -212,8 +220,12 @@ const updateTaskbarBadge = async (count: number) => {
     const imageData = ctx.getImageData(0, 0, size, size);
     const img = await Image.new(new Uint8Array(imageData.data), size, size);
 
-    await win.setOverlayIcon(img);
+    try {
+      await win.setOverlayIcon(img);
+    } finally {
+      await img.close();
+    }
   } catch (e) {
-    console.error("Failed to set overlay icon:", e);
+    console.error("Failed to set app badge:", e);
   }
 };

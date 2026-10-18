@@ -398,6 +398,12 @@ pub fn start_engine(app: AppHandle) {
                 continue;
             }
 
+            // Never trigger macOS's capture API before authorization. Apart from
+            // unwanted prompts, an unauthorized capture may contain only wallpaper.
+            if !crate::platform::screen_capture_permission() {
+                continue;
+            }
+
             let interval_secs = state.capture_interval_secs.load(Ordering::SeqCst);
             if interval_secs == 0 { continue; }
 
@@ -462,6 +468,7 @@ async fn run_cleanup(app: &AppHandle) -> anyhow::Result<()> {
 }
 
 async fn capture_screens(app: &AppHandle) -> anyhow::Result<()> {
+    anyhow::ensure!(crate::platform::screen_capture_permission(), "需要屏幕录制权限");
     let store = match app.store("config.json") {
         Ok(s) => s,
         Err(_) => return Ok(()),
@@ -478,9 +485,8 @@ async fn capture_screens(app: &AppHandle) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let merge_screens = true;
-
     let monitors = Monitor::all()?;
+    anyhow::ensure!(!monitors.is_empty(), "没有可用的显示器");
     let now = Local::now();
     let timestamp = now.format("%H-%M-%S").to_string();
     let date_folder = now.format("%Y-%m-%d").to_string();
@@ -490,49 +496,106 @@ async fn capture_screens(app: &AppHandle) -> anyhow::Result<()> {
         fs::create_dir_all(&save_dir)?;
     }
 
-    if merge_screens {
-        let mut min_x = i32::MAX;
-        let mut min_y = i32::MAX;
-        let mut max_x = i32::MIN;
-        let mut max_y = i32::MIN;
-
-        for m in &monitors {
-            let x = m.x()?;
-            let y = m.y()?;
-            let width = m.width()? as i32;
-            let height = m.height()? as i32;
-            
-            min_x = min_x.min(x);
-            min_y = min_y.min(y);
-            max_x = max_x.max(x + width);
-            max_y = max_y.max(y + height);
-        }
-
-        let total_width = (max_x - min_x) as u32;
-        let total_height = (max_y - min_y) as u32;
-
-        let mut combined_image = image::RgbaImage::new(total_width, total_height);
-
-        for m in &monitors {
-            let capture = m.capture_image()?;
-            let offset_x = (m.x()? - min_x) as u32;
-            let offset_y = (m.y()? - min_y) as u32;
-            image::imageops::overlay(&mut combined_image, &capture, offset_x as i64, offset_y as i64);
-        }
-
-        let file_path = save_dir.join(format!("{}.jpg", timestamp));
-        let dynamic_image = image::DynamicImage::ImageRgba8(combined_image);
-        let rgb_image = dynamic_image.into_rgb8();
-        rgb_image.save_with_format(file_path, image::ImageFormat::Jpeg)?;
-    } else {
-        for (i, m) in monitors.iter().enumerate() {
-            let capture = m.capture_image()?;
-            let file_path = save_dir.join(format!("{}_{}.jpg", timestamp, i));
-            let dynamic_image = image::DynamicImage::ImageRgba8(capture);
-            let rgb_image = dynamic_image.into_rgb8();
-            rgb_image.save_with_format(file_path, image::ImageFormat::Jpeg)?;
-        }
+    let mut screens = Vec::with_capacity(monitors.len());
+    for monitor in monitors {
+        screens.push(CapturedScreen {
+            x: monitor.x()?,
+            y: monitor.y()?,
+            width: monitor.width()?,
+            height: monitor.height()?,
+            pixels: monitor.capture_image()?,
+        });
     }
 
+    let combined_image = combine_screens(screens)?;
+    let file_path = save_dir.join(format!("{}.jpg", timestamp));
+    image::DynamicImage::ImageRgba8(combined_image)
+        .into_rgb8()
+        .save_with_format(file_path, image::ImageFormat::Jpeg)?;
+
     Ok(())
+}
+
+struct CapturedScreen {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    pixels: image::RgbaImage,
+}
+
+fn combine_screens(screens: Vec<CapturedScreen>) -> anyhow::Result<image::RgbaImage> {
+    anyhow::ensure!(!screens.is_empty(), "没有可用的显示器");
+    let mut scale = 1.0_f64;
+    for screen in &screens {
+        anyhow::ensure!(screen.width > 0 && screen.height > 0, "显示器尺寸无效");
+        anyhow::ensure!(screen.pixels.width() > 0 && screen.pixels.height() > 0, "截图为空");
+        // macOS positions use points while Retina captures use physical pixels.
+        // Use one common scale to preserve detail and the desktop arrangement.
+        scale = scale.max(screen.pixels.width() as f64 / screen.width as f64)
+            .max(screen.pixels.height() as f64 / screen.height as f64);
+    }
+    let min_x = screens.iter().map(|s| i64::from(s.x)).min().unwrap();
+    let min_y = screens.iter().map(|s| i64::from(s.y)).min().unwrap();
+    let max_x = screens.iter().map(|s| i64::from(s.x) + i64::from(s.width)).max().unwrap();
+    let max_y = screens.iter().map(|s| i64::from(s.y) + i64::from(s.height)).max().unwrap();
+    let scaled = |value: i64| (value as f64 * scale).round() as u32;
+    let mut combined = image::RgbaImage::new(scaled(max_x - min_x), scaled(max_y - min_y));
+
+    for screen in screens {
+        let x = scaled(i64::from(screen.x) - min_x);
+        let y = scaled(i64::from(screen.y) - min_y);
+        let width = scaled(i64::from(screen.x) + i64::from(screen.width) - min_x) - x;
+        let height = scaled(i64::from(screen.y) + i64::from(screen.height) - min_y) - y;
+        let pixels = if screen.pixels.dimensions() == (width, height) {
+            screen.pixels
+        } else {
+            image::imageops::resize(&screen.pixels, width, height, image::imageops::FilterType::Triangle)
+        };
+        image::imageops::overlay(&mut combined, &pixels, i64::from(x), i64::from(y));
+    }
+    Ok(combined)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{Rgba, RgbaImage};
+
+    #[test]
+    fn retina_capture_keeps_all_pixels() {
+        let mut pixels = RgbaImage::new(8, 4);
+        pixels.put_pixel(7, 3, Rgba([255, 0, 0, 255]));
+        let combined = combine_screens(vec![CapturedScreen { x: 0, y: 0, width: 4, height: 2, pixels }]).unwrap();
+        assert_eq!(combined.dimensions(), (8, 4));
+        assert_eq!(combined.get_pixel(7, 3), &Rgba([255, 0, 0, 255]));
+    }
+
+    #[test]
+    fn mixed_density_screens_keep_negative_origins_and_layout() {
+        let red = Rgba([255, 0, 0, 255]);
+        let blue = Rgba([0, 0, 255, 255]);
+        let combined = combine_screens(vec![
+            CapturedScreen { x: -4, y: -2, width: 4, height: 2, pixels: RgbaImage::from_pixel(4, 2, red) },
+            CapturedScreen { x: 0, y: 0, width: 4, height: 2, pixels: RgbaImage::from_pixel(8, 4, blue) },
+        ]).unwrap();
+        assert_eq!(combined.dimensions(), (16, 8));
+        assert_eq!(combined.get_pixel(7, 3), &red);
+        assert_eq!(combined.get_pixel(8, 4), &blue);
+        assert_eq!(combined.get_pixel(15, 7), &blue);
+        assert_eq!(combined.get_pixel(8, 0), &Rgba([0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn ordinary_screens_keep_original_pixels() {
+        let pixels = RgbaImage::from_pixel(4, 2, Rgba([1, 2, 3, 255]));
+        let combined = combine_screens(vec![CapturedScreen { x: -4, y: 0, width: 4, height: 2, pixels: pixels.clone() }]).unwrap();
+        assert_eq!(combined, pixels);
+    }
+
+    #[test]
+    fn empty_or_zero_sized_screens_are_rejected() {
+        assert!(combine_screens(vec![]).is_err());
+        assert!(combine_screens(vec![CapturedScreen { x: 0, y: 0, width: 0, height: 2, pixels: RgbaImage::new(0, 2) }]).is_err());
+    }
 }

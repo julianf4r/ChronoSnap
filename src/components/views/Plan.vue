@@ -679,7 +679,7 @@ onUnmounted(() => {
         <div class="p-7 space-y-6">
           <div>
             <label class="text-[10px] font-bold text-text-sec block mb-2">任务名称</label>
-            <input v-model="editingTask.title" autofocus maxlength="120" placeholder="需要完成什么？" class="w-full bg-bg-input border border-transparent rounded-2xl px-4 py-3.5 text-sm font-bold outline-none focus:bg-bg-card focus:border-[#007AFF]/40" @keydown.ctrl.enter="saveTask" />
+            <input v-model="editingTask.title" autofocus maxlength="120" placeholder="需要完成什么？" class="w-full bg-bg-input border border-transparent rounded-2xl px-4 py-3.5 text-sm font-bold outline-none focus:bg-bg-card focus:border-[#007AFF]/40" @keydown.ctrl.enter.prevent="saveTask" @keydown.meta.enter.prevent="saveTask" />
           </div>
 
           <div class="grid grid-cols-2 gap-4">
@@ -762,7 +762,7 @@ onUnmounted(() => {
 
           <div>
             <label class="text-[10px] font-bold text-text-sec block mb-2">备注（可选）</label>
-            <textarea v-model="editingTask.notes" rows="4" placeholder="补充任务背景、交付标准或相关信息…" class="w-full resize-none bg-bg-input border border-transparent rounded-2xl px-4 py-3 text-sm outline-none focus:bg-bg-card focus:border-[#007AFF]/40" @keydown.ctrl.enter="saveTask"></textarea>
+            <textarea v-model="editingTask.notes" rows="4" placeholder="补充任务背景、交付标准或相关信息…" class="w-full resize-none bg-bg-input border border-transparent rounded-2xl px-4 py-3 text-sm outline-none focus:bg-bg-card focus:border-[#007AFF]/40" @keydown.ctrl.enter.prevent="saveTask" @keydown.meta.enter.prevent="saveTask"></textarea>
           </div>
 
           <div class="flex items-center gap-3 pt-1">

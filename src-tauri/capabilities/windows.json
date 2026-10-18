@@ -1,0 +1,6 @@
+{
+  "identifier": "windows-capability",
+  "platforms": ["windows"],
+  "windows": ["main"],
+  "permissions": ["core:window:allow-set-overlay-icon"]
+}

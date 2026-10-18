@@ -22,6 +22,7 @@ import { DBEvent, TimelineItem, StorageHealth } from "./types";
 
 // --- Components ---
 import Setup from "./components/Setup.vue";
+import ScreenCapturePermission from "./components/ScreenCapturePermission.vue";
 import Preview from "./components/views/Preview.vue";
 import Plan from "./components/views/Plan.vue";
 import Dashboard from "./components/views/Dashboard.vue";
@@ -96,7 +97,7 @@ const checkReminders = async (currentMin: number) => {
 
     for (const r of dueReminders) {
       if (hasPermission) {
-        sendNotification({ title: '', body: r.content });
+        sendNotification({ title: '瞬影提醒', body: r.content });
       }
     }
   }
@@ -448,7 +449,7 @@ const handleTimelineMouseUp = () => {
 };
 
 const handleTimelineWheel = (e: WheelEvent) => {
-  if (e.ctrlKey) {
+  if (e.ctrlKey || e.metaKey) {
     e.preventDefault(); if (!timelineRef.value) return;
     const rect = timelineRef.value.getBoundingClientRect();
     const my = e.clientY - rect.top; const cy = my + timelineRef.value.scrollTop;
@@ -537,6 +538,7 @@ const togglePause = async () => {
 
 <template>
   <div class="h-screen w-screen flex flex-col overflow-hidden text-text-main bg-bg-main">
+    <ScreenCapturePermission />
     <Setup v-if="!isSetupComplete" @complete="handleSetupComplete" />
     <div v-else class="flex flex-1 overflow-hidden">
       <!-- Sidebar -->
@@ -724,7 +726,7 @@ const togglePause = async () => {
             <div v-if="editingEvent.main_tag_id && getSubTags(editingEvent.main_tag_id).length" class="space-y-2"><label class="text-[10px] font-bold text-text-sec">副标签</label>
               <div class="flex flex-wrap gap-2"><button v-for="sub in getSubTags(editingEvent.main_tag_id)" :key="sub.id" @click="editingEvent.sub_tag_id = sub.id" class="px-3 py-1.5 rounded-lg text-[12px] font-medium" :class="editingEvent.sub_tag_id === sub.id ? 'bg-[#1D1D1F] text-white' : 'bg-bg-input text-text-sec'">{{ sub.name }}</button></div>
             </div>
-            <textarea v-model="editingEvent.content" placeholder="记录具体内容..." @keydown.ctrl.enter="saveEvent" class="w-full bg-bg-input rounded-2xl p-4 text-sm min-h-25 outline-none border border-transparent focus:bg-bg-card focus:border-border-main transition-all"></textarea>
+            <textarea v-model="editingEvent.content" placeholder="记录具体内容..." @keydown.ctrl.enter.prevent="saveEvent" @keydown.meta.enter.prevent="saveEvent" class="w-full bg-bg-input rounded-2xl p-4 text-sm min-h-25 outline-none border border-transparent focus:bg-bg-card focus:border-border-main transition-all"></textarea>
           </div>
           <div class="flex gap-4 pt-4">
              <button v-if="editingEvent.id" @click="deleteEvent(editingEvent.id); isEventModalOpen = false" class="text-[#FF3B30] font-bold px-4 py-2 flex items-center gap-2"><Trash2 :size="18" /> 删除</button>

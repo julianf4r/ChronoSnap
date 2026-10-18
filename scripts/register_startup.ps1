@@ -1,3 +1,8 @@
+# 仅供 Windows 手动注册开始菜单快捷方式，应用不会自动执行此脚本。
+if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+    throw "此脚本仅支持 Windows，请勿在 macOS 或 Linux 上运行。"
+}
+
 # 1. 设置基础信息 (请根据你的实际情况修改)
 $targetExe = "\path\to\ChronoSnap.exe"     # 你的 Release 版 exe 绝对路径
 $shortcutPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\ChronoSnap.lnk" # 快捷方式存放点
